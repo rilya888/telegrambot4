@@ -1,0 +1,12 @@
+name: telegrambot4
+description: Telegram Bot for Calorie Analysis
+runtime: python3.12
+main: bot.py
+build_command: pip install -r requirements.txt
+start_command: python bot.py
+port: 8000
+health_check: /health
+env:
+  BOT_TOKEN: ""
+  NEBUS_API_KEY: ""
+  DATABASE_URL: ""

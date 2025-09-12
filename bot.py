@@ -15,9 +15,22 @@ except ImportError:
 from dotenv import load_dotenv
 import asyncio
 from datetime import datetime, time
+from flask import Flask, jsonify
+import threading
 
 # Загружаем переменные окружения из .env файла
 load_dotenv()
+
+# Создаем Flask приложение для health check
+flask_app = Flask(__name__)
+
+@flask_app.route('/health')
+def health_check():
+    return jsonify({"status": "ok", "message": "Bot is running"})
+
+@flask_app.route('/')
+def home():
+    return jsonify({"message": "Telegram Bot for Calorie Analysis", "status": "running"})
 
 # Настройка логирования
 logging.basicConfig(
@@ -1260,8 +1273,16 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.error(f"Error handling voice: {e}")
         await update.message.reply_text("Произошла ошибка при обработке голосового сообщения. Попробуйте еще раз.")
 
+def run_flask():
+    """Запуск Flask приложения в отдельном потоке"""
+    flask_app.run(host='0.0.0.0', port=8000, debug=False)
+
 def main() -> None:
     """Запуск бота"""
+    # Запускаем Flask в отдельном потоке для health check
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
@@ -1277,6 +1298,7 @@ def main() -> None:
     # Запускаем бота
     print("Бот запущен...")
     print("Автоматический сброс приемов пищи при первом взаимодействии нового дня")
+    print("Flask health check доступен на порту 8000")
     application.run_polling()
 
 if __name__ == '__main__':
