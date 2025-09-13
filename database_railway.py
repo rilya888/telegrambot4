@@ -189,6 +189,7 @@ class UserDatabase:
     def add_calorie_record(self, user_id: int, food_name: str, calories: int, source: str) -> bool:
         """Добавление записи о калориях"""
         try:
+            logger.info(f"Adding calorie record: user_id={user_id}, food_name={food_name}, calories={calories}, source={source}")
             conn = self.get_connection()
             cursor = conn.cursor()
             
@@ -205,6 +206,7 @@ class UserDatabase:
             
             conn.commit()
             conn.close()
+            logger.info(f"Successfully added calorie record for user {user_id}")
             return True
             
         except Exception as e:
@@ -214,6 +216,7 @@ class UserDatabase:
     def get_daily_calories_sum(self, user_id: int) -> int:
         """Получение суммы калорий за сегодня"""
         try:
+            logger.info(f"Getting daily calories sum for user {user_id}")
             conn = self.get_connection()
             cursor = conn.cursor()
             
@@ -230,7 +233,9 @@ class UserDatabase:
             
             result = cursor.fetchone()
             conn.close()
-            return result[0] if result else 0
+            daily_sum = result[0] if result else 0
+            logger.info(f"Daily calories sum for user {user_id}: {daily_sum}")
+            return daily_sum
             
         except Exception as e:
             logger.error(f"Error getting daily calories sum: {e}")
