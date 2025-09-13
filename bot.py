@@ -361,38 +361,24 @@ async def show_calorie_history(query, context, period="today"):
         history_text += f"**Общее количество калорий: {total_calories} ккал**\n\n"
         
         if period == "week":
-            # Для недели группируем по дням
-            from collections import defaultdict
-            daily_calories = defaultdict(int)
-            daily_names = {
-                0: "Понедельник", 1: "Вторник", 2: "Среда", 3: "Четверг",
-                4: "Пятница", 5: "Суббота", 6: "Воскресенье"
-            }
+            # Для недели используем новую функцию
+            weekly_data = db.get_weekly_calories_summary(user_id)
+            daily_data = weekly_data['daily_data']
+            total_weekly = weekly_data['total_weekly']
             
-            for record in history:
+            history_text += f"**Недельная сводка:**\n"
+            history_text += f"Всего за неделю: {total_weekly} ккал\n\n"
+            
+            # Показываем данные по дням
+            for date_str, data in daily_data.items():
                 try:
-                    # Парсим дату
-                    created_at = record['created_at']
-                    if 'T' in created_at:
-                        record_datetime = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                    else:
-                        record_datetime = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
-                    
-                    # Группируем по дням недели
-                    day_of_week = record_datetime.weekday()
-                    daily_calories[day_of_week] += record['calories']
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    day_name = date_obj.strftime('%A')
+                    calories = data['calories']
+                    meals = data['meals']
+                    history_text += f"📅 **{day_name}** ({date_str}): {calories} ккал ({meals} приемов)\n"
                 except:
-                    # Если не удается распарсить дату, пропускаем запись
-                    continue
-            
-            # Показываем калории по дням недели
-            for day_num in range(7):
-                day_name = daily_names[day_num]
-                calories = daily_calories.get(day_num, 0)
-                if calories > 0:
-                    history_text += f"📅 **{day_name}**: {calories} ккал\n"
-                else:
-                    history_text += f"📅 **{day_name}**: 0 ккал\n"
+                    history_text += f"📅 **{date_str}**: {data['calories']} ккал ({data['meals']} приемов)\n"
         else:
             # Для сегодня и вчера показываем детальный список
             for record in history:
@@ -411,8 +397,8 @@ async def show_calorie_history(query, context, period="today"):
                     # Если не удается распарсить дату, показываем как есть
                     formatted_time = record['created_at'].split(' ')[-1][:5] if ' ' in record['created_at'] else record['created_at']
                 
-                history_text += f"• {record['food_description']}: {record['calories']} ккал\n"
-                history_text += f"  Тип: {record['analysis_type']} | {formatted_time}\n\n"
+                history_text += f"• {record['food_name']}: {record['calories']} ккал\n"
+                history_text += f"  Источник: {record['source']} | {formatted_time}\n\n"
         
         keyboard = [
             [InlineKeyboardButton("📊 Выбрать другой период", callback_data="history")],
@@ -708,7 +694,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             # Получаем выбранный тип приема пищи
             meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
             # Сохраняем в историю
-            db.add_calorie_record(user_id, f"{meal_type} - Фотография еды", calories, "photo")
+            db.add_calorie_record(user_id, meal_type, calories, "photo")
             logger.info(f"Saved photo analysis: {calories} calories for user {user_id}")
             
             # Получаем общую сумму калорий за сегодня
@@ -800,7 +786,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             # Получаем выбранный тип приема пищи
             meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
             # Сохраняем в историю
-            db.add_calorie_record(user_id, f"{meal_type} - {text}", calories, "text")
+            db.add_calorie_record(user_id, meal_type, calories, "text")
             
             # Получаем общую сумму калорий за сегодня
             daily_sum = get_daily_calories_sum(user_id)
@@ -1132,7 +1118,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 # Получаем выбранный тип приема пищи
                 meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
                 # Сохраняем в историю
-                db.add_calorie_record(user_id, f"{meal_type} - {text}", calories, "voice")
+                db.add_calorie_record(user_id, meal_type, calories, "voice")
                 
                 # Получаем общую сумму калорий за сегодня
                 daily_sum = get_daily_calories_sum(user_id)

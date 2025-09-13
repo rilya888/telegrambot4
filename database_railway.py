@@ -301,44 +301,29 @@ class UserDatabase:
             logger.error(f"Error getting user: {e}")
             return None
     
-    def add_calorie_record(self, user_id: int, food_name: str, calories: int, source: str) -> bool:
+    def add_calorie_record(self, user_id: int, food_name: str, calories: int, source: str = "unknown") -> bool:
         """Добавление записи о калориях"""
         try:
-            # Обрезаем длинные значения, если они слишком большие
-            max_food_name_length = 255
-            max_source_length = 1000
+            # Упрощаем данные - только название приема пищи и калории
+            # Обрезаем название до 50 символов для краткости
+            max_food_name_length = 50
             
             if len(food_name) > max_food_name_length:
                 food_name = food_name[:max_food_name_length-3] + "..."
                 logger.warning(f"Food name truncated to {max_food_name_length} characters")
             
-            if len(source) > max_source_length:
-                source = source[:max_source_length-3] + "..."
-                logger.warning(f"Source truncated to {max_source_length} characters")
+            # Упрощаем source до коротких значений
+            source_map = {
+                "photo": "фото",
+                "text": "текст", 
+                "voice": "голос",
+                "unknown": "другое"
+            }
+            source = source_map.get(source, "другое")
             
             logger.info(f"Adding calorie record: user_id={user_id}, food_name={food_name}, calories={calories}, source={source}")
             conn = self.get_connection()
             cursor = conn.cursor()
-            
-            # Принудительно исправляем тип колонки source перед вставкой
-            if self.use_postgres:
-                try:
-                    # Проверяем и обновляем тип колонки source
-                    cursor.execute('''
-                        SELECT data_type, character_maximum_length 
-                        FROM information_schema.columns 
-                        WHERE table_name = 'calorie_history' AND column_name = 'source'
-                    ''')
-                    result = cursor.fetchone()
-                    if result:
-                        data_type, max_length = result
-                        if 'character varying' in data_type and max_length and max_length < 1000:
-                            logger.info("Converting source column to TEXT before insert...")
-                            cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
-                            conn.commit()
-                            logger.info("Source column type updated to TEXT")
-                except Exception as e:
-                    logger.warning(f"Could not update source column type: {e}")
             
             if self.use_postgres:
                 cursor.execute('''
@@ -459,6 +444,62 @@ class UserDatabase:
         except Exception as e:
             logger.error(f"Error getting calorie history by period: {e}")
             return []
+    
+    def get_weekly_calories_summary(self, user_id: int) -> dict:
+        """Получение недельной сводки калорий по дням"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            if self.use_postgres:
+                cursor.execute('''
+                    SELECT 
+                        DATE(created_at) as date,
+                        SUM(calories) as daily_total,
+                        COUNT(*) as meals_count
+                    FROM calorie_history 
+                    WHERE user_id = %s 
+                    AND created_at >= CURRENT_DATE - INTERVAL '7 days'
+                    GROUP BY DATE(created_at)
+                    ORDER BY date DESC
+                ''', (user_id,))
+            else:
+                cursor.execute('''
+                    SELECT 
+                        DATE(created_at) as date,
+                        SUM(calories) as daily_total,
+                        COUNT(*) as meals_count
+                    FROM calorie_history 
+                    WHERE user_id = ? 
+                    AND created_at >= DATE('now', '-7 days')
+                    GROUP BY DATE(created_at)
+                    ORDER BY date DESC
+                ''', (user_id,))
+            
+            rows = cursor.fetchall()
+            conn.close()
+            
+            # Преобразуем в словарь
+            weekly_data = {}
+            total_weekly = 0
+            
+            for row in rows:
+                date, daily_total, meals_count = row
+                weekly_data[str(date)] = {
+                    'calories': daily_total or 0,
+                    'meals': meals_count or 0
+                }
+                total_weekly += daily_total or 0
+            
+            return {
+                'daily_data': weekly_data,
+                'total_weekly': total_weekly,
+                'days_count': len(weekly_data)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting weekly calories summary: {e}")
+            return {'daily_data': {}, 'total_weekly': 0, 'days_count': 0}
     
     def reset_daily_calories(self, user_id: int) -> bool:
         """Сброс калорий за сегодняшний день"""
