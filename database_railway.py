@@ -236,6 +236,48 @@ class UserDatabase:
             logger.error(f"Error getting daily calories sum: {e}")
             return 0
     
+    def get_user_calorie_history(self, user_id: int, limit: int = 50) -> list:
+        """Получить историю калорий пользователя"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            if self.use_postgres:
+                cursor.execute('''
+                    SELECT * FROM calorie_history 
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                ''', (user_id, limit))
+            else:
+                cursor.execute('''
+                    SELECT * FROM calorie_history 
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                ''', (user_id, limit))
+            
+            records = cursor.fetchall()
+            conn.close()
+            
+            # Преобразуем в список словарей
+            history = []
+            for record in records:
+                history.append({
+                    'id': record[0],
+                    'user_id': record[1],
+                    'food_name': record[2],
+                    'calories': record[3],
+                    'source': record[4],
+                    'created_at': record[5]
+                })
+            
+            return history
+            
+        except Exception as e:
+            logger.error(f"Error getting calorie history: {e}")
+            return []
+
     def get_user_calorie_history_by_period(self, user_id: int, start_date, end_date) -> list:
         """Получение истории калорий пользователя за определенный период"""
         try:
