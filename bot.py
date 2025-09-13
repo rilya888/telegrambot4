@@ -1,113 +1,56 @@
 import logging
-import requests
 import io
 import os
-import sqlite3
 import speech_recognition as sr
 from pydub import AudioSegment
-from PIL import Image
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 try:
     from database_railway import UserDatabase
 except ImportError:
     from database import UserDatabase
-from dotenv import load_dotenv
 import asyncio
 from datetime import datetime, time
+from typing import Optional, Dict, Any
 
-# Загружаем переменные окружения из .env файла
-load_dotenv()
-
+# Импортируем наши модули
+from config import setup_logging, API_CACHE_SIZE, BOT_TOKEN
+from utils import (
+    validate_user_input, extract_calories_from_text, 
+    format_calorie_response, safe_reply, create_image_hash, create_text_hash
+)
+from api_client import api_client
 
 # Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# Токен бота
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# Nebius API настройки
-NEBUS_API_KEY = os.getenv("NEBUS_API_KEY")
-NEBUS_API_URL = "https://api.studio.nebius.com/v1/"
-
-# Проверка наличия токенов
-if not BOT_TOKEN:
-    logger.error("BOT_TOKEN не найден в переменных окружения!")
-    exit(1)
-
-if not NEBUS_API_KEY:
-    logger.error("NEBUS_API_KEY не найден в переменных окружения!")
-    exit(1)
+logger = setup_logging()
 
 # Инициализация базы данных
 db = UserDatabase()
 
-def analyze_food_image(image_data):
-    """Анализ изображения еды через Nebius API"""
+# Кэш для API запросов
+api_cache = {}
+
+
+def analyze_food_image(image_data: bytes) -> str:
+    """Анализ изображения еды через Nebius API с кэшированием"""
     try:
-        # Подготавливаем изображение для API
-        image = Image.open(io.BytesIO(image_data))
+        # Создаем хэш изображения для кэширования
+        image_hash = create_image_hash(image_data)
         
-        # Конвертируем в base64
-        import base64
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        img_base64 = base64.b64encode(buffered.getvalue()).decode()
+        # Проверяем кэш
+        if image_hash in api_cache:
+            logger.info("Using cached result for image analysis")
+            return api_cache[image_hash]
         
-        # Заголовки для API запроса
-        headers = {
-            "Authorization": f"Bearer {NEBUS_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        # Анализируем изображение через API клиент
+        result_text = api_client.analyze_image(image_data)
         
-        # Данные для запроса
-        data = {
-            "model": "Qwen/Qwen2.5-VL-72B-Instruct",  # Используем Qwen2.5-VL-72B-Instruct
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Проанализируй это изображение еды и определи примерное количество калорий. Ответь только числом калорий, без дополнительного текста."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{img_base64}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            "max_tokens": 50,
-            "temperature": 0.1
-        }
+        # Сохраняем в кэш (ограничиваем размер кэша)
+        if len(api_cache) < API_CACHE_SIZE:
+            api_cache[image_hash] = result_text
         
-        # Отправляем запрос к API
-        response = requests.post(
-            f"{NEBUS_API_URL}chat/completions",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
+        return result_text
         
-        if response.status_code == 200:
-            result = response.json()
-            if 'choices' in result and len(result['choices']) > 0:
-                calories = result['choices'][0]['message']['content'].strip()
-                return f"Примерное количество калорий: {calories}"
-            else:
-                logger.error(f"Unexpected API response format: {result}")
-                return "Извините, не удалось получить корректный ответ от API. Попробуйте еще раз."
-        else:
-            logger.error(f"API Error: {response.status_code} - {response.text}")
-            return "Извините, не удалось проанализировать изображение. Попробуйте еще раз."
-            
     except Exception as e:
         logger.error(f"Error analyzing image: {e}")
         return "Произошла ошибка при анализе изображения. Попробуйте еще раз."
@@ -115,6 +58,9 @@ def analyze_food_image(image_data):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /start"""
     user_id = update.effective_user.id
+    username = update.effective_user.username or "unknown"
+    
+    logger.info(f"User {user_id} ({username}) started the bot")
     
     # Проверяем, нужно ли сбросить счетчик (новый день)
     await check_and_reset_daily_meals(context)
@@ -124,9 +70,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     if not user:
         # Пользователь не зарегистрирован, начинаем регистрацию
+        logger.info(f"New user {user_id} ({username}) starting registration")
         await start_registration(update, context)
     else:
         # Пользователь зарегистрирован, показываем главное меню
+        logger.info(f"Existing user {user_id} ({username}) accessing main menu")
         keyboard = [
             [InlineKeyboardButton("🍽️ Добавить блюдо", callback_data="add_food")],
             [InlineKeyboardButton("🔍 Хочу знать сколько калорий", callback_data="quick_analysis")],
@@ -157,48 +105,26 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 
-def analyze_food_text(text_description):
-    """Анализ текстового описания еды через Nebius API"""
+def analyze_food_text(text_description: str) -> str:
+    """Анализ текстового описания еды через Nebius API с кэшированием"""
     try:
-        # Заголовки для API запроса
-        headers = {
-            "Authorization": f"Bearer {NEBUS_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        # Создаем хэш текста для кэширования
+        text_hash = create_text_hash(text_description)
         
-        # Данные для запроса
-        data = {
-            "model": "Qwen/Qwen2.5-VL-72B-Instruct",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": f"Проанализируй это описание еды и определи примерное количество калорий: '{text_description}'. Ответь только числом калорий, без дополнительного текста."
-                }
-            ],
-            "max_tokens": 50,
-            "temperature": 0.1
-        }
+        # Проверяем кэш
+        if text_hash in api_cache:
+            logger.info("Using cached result for text analysis")
+            return api_cache[text_hash]
         
-        # Отправляем запрос к API
-        response = requests.post(
-            f"{NEBUS_API_URL}chat/completions",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
+        # Анализируем текст через API клиент
+        result_text = api_client.analyze_text(text_description)
         
-        if response.status_code == 200:
-            result = response.json()
-            if 'choices' in result and len(result['choices']) > 0:
-                calories = result['choices'][0]['message']['content'].strip()
-                return f"Примерное количество калорий: {calories}"
-            else:
-                logger.error(f"Unexpected API response format: {result}")
-                return "Извините, не удалось получить корректный ответ от API. Попробуйте еще раз."
-        else:
-            logger.error(f"API Error: {response.status_code} - {response.text}")
-            return "Извините, не удалось проанализировать описание. Попробуйте еще раз."
-            
+        # Сохраняем в кэш (ограничиваем размер кэша)
+        if len(api_cache) < API_CACHE_SIZE:
+            api_cache[text_hash] = result_text
+        
+        return result_text
+        
     except Exception as e:
         logger.error(f"Error analyzing text: {e}")
         return "Произошла ошибка при анализе описания. Попробуйте еще раз."
@@ -741,16 +667,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Обработчик фотографий"""
     try:
         user_id = update.effective_user.id
+        username = update.effective_user.username or "unknown"
+        
+        logger.info(f"User {user_id} ({username}) sent photo for analysis")
         
         # Проверяем, зарегистрирован ли пользователь
         user = db.get_user(user_id)
         if not user:
+            logger.warning(f"Unregistered user {user_id} tried to analyze photo")
             await update.message.reply_text("❌ Сначала пройдите регистрацию командой /start")
             return
         
         # Проверяем режим быстрого анализа
         if context.user_data.get('quick_analysis_mode'):
             context.user_data['quick_analysis_mode'] = False  # Сбрасываем флаг
+            logger.info(f"User {user_id} using quick analysis mode for photo")
             await handle_quick_photo(update, context)
             return
         
@@ -763,6 +694,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         
         # Получаем выбранный тип приема пищи
         meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
+        logger.info(f"Analyzing photo for {meal_type} for user {user_id}")
+        
         # Отправляем сообщение о начале анализа
         await update.message.reply_text(f"Анализирую изображение для {meal_type}...")
         
@@ -770,31 +703,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         result = analyze_food_image(image_data)
         
         # Извлекаем количество калорий из результата
-        try:
-            # Ищем число в результате
-            import re
-            calories_match = re.search(r'(\d+)', result)
-            if calories_match:
-                calories = int(calories_match.group(1))
-                # Получаем выбранный тип приема пищи
-                meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
-                # Сохраняем в историю
-                db.add_calorie_record(user_id, f"{meal_type} - Фотография еды", calories, "photo")
-                
-                # Получаем общую сумму калорий за сегодня
-                daily_sum = get_daily_calories_sum(user_id)
-                daily_calories = user.get('daily_calories', 0)
-                
-                # Формируем новый формат ответа
-                if daily_calories > 0:
-                    percentage = (daily_sum / daily_calories) * 100
-                    result = f"Примерное количество калорий: {calories}\n\nОбщее количество калорий за сегодня: {daily_sum}\n\n📊 Это составляет {percentage:.1f}% от вашей суточной нормы ({daily_calories} ккал)"
-                else:
-                    result = f"Примерное количество калорий: {calories}\n\nОбщее количество калорий за сегодня: {daily_sum}"
-            else:
-                logger.warning(f"Could not extract calories from result: {result}")
-        except Exception as e:
-            logger.error(f"Error processing calories from photo: {e}")
+        calories = extract_calories_from_text(result)
+        if calories:
+            # Получаем выбранный тип приема пищи
+            meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
+            # Сохраняем в историю
+            db.add_calorie_record(user_id, f"{meal_type} - Фотография еды", calories, "photo")
+            logger.info(f"Saved photo analysis: {calories} calories for user {user_id}")
+            
+            # Получаем общую сумму калорий за сегодня
+            daily_sum = get_daily_calories_sum(user_id)
+            daily_calories = user.get('daily_calories', 0)
+            
+            # Формируем ответ
+            result = format_calorie_response(calories, daily_sum, daily_calories)
+        else:
+            logger.warning(f"Could not extract calories from photo analysis result: {result}")
         
         # Отправляем результат
         await update.message.reply_text(result)
@@ -803,7 +727,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await show_analysis_menu(update, context)
         
     except Exception as e:
-        logger.error(f"Error handling photo: {e}")
+        logger.error(f"Error handling photo for user {user_id}: {e}")
         await update.message.reply_text("Произошла ошибка при обработке фотографии. Попробуйте еще раз.")
 
 async def handle_quick_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -871,31 +795,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         result = analyze_food_text(text)
         
         # Извлекаем количество калорий из результата
-        try:
-            # Ищем число в результате
-            import re
-            calories_match = re.search(r'(\d+)', result)
-            if calories_match:
-                calories = int(calories_match.group(1))
-                # Получаем выбранный тип приема пищи
-                meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
-                # Сохраняем в историю
-                db.add_calorie_record(user_id, f"{meal_type} - {text}", calories, "text")
-                
-                # Получаем общую сумму калорий за сегодня
-                daily_sum = get_daily_calories_sum(user_id)
-                daily_calories = user.get('daily_calories', 0)
-                
-                # Формируем новый формат ответа
-                if daily_calories > 0:
-                    percentage = (daily_sum / daily_calories) * 100
-                    result = f"Примерное количество калорий: {calories}\n\nОбщее количество калорий за сегодня: {daily_sum}\n\n📊 Это составляет {percentage:.1f}% от вашей суточной нормы ({daily_calories} ккал)"
-                else:
-                    result = f"Примерное количество калорий: {calories}\n\nОбщее количество калорий за сегодня: {daily_sum}"
-            else:
-                logger.warning(f"Could not extract calories from result: {result}")
-        except Exception as e:
-            logger.error(f"Error processing calories from text: {e}")
+        calories = extract_calories_from_text(result)
+        if calories:
+            # Получаем выбранный тип приема пищи
+            meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
+            # Сохраняем в историю
+            db.add_calorie_record(user_id, f"{meal_type} - {text}", calories, "text")
+            
+            # Получаем общую сумму калорий за сегодня
+            daily_sum = get_daily_calories_sum(user_id)
+            daily_calories = user.get('daily_calories', 0)
+            
+            # Формируем ответ
+            result = format_calorie_response(calories, daily_sum, daily_calories)
+        else:
+            logger.warning(f"Could not extract calories from result: {result}")
         
         # Отправляем результат
         await update.message.reply_text(result)
@@ -929,56 +843,47 @@ async def handle_registration_text(update: Update, context: ContextTypes.DEFAULT
         )
     
     elif step == 'age':
-        try:
-            age = int(text)
-            if 10 <= age <= 120:
-                user_data['age'] = age
-                context.user_data['registration_step'] = 'height'
-                await update.message.reply_text("Введите ваш рост в сантиметрах:")
-            else:
-                await update.message.reply_text("Пожалуйста, введите корректный возраст (10-120 лет):")
-        except ValueError:
-            await update.message.reply_text("Пожалуйста, введите возраст числом:")
+        age = validate_user_input(text, "age")
+        if age is not None:
+            user_data['age'] = age
+            context.user_data['registration_step'] = 'height'
+            await update.message.reply_text("Введите ваш рост в сантиметрах:")
+        else:
+            await update.message.reply_text("Пожалуйста, введите корректный возраст (10-120 лет):")
     
     elif step == 'height':
-        try:
-            height = float(text)
-            if 100 <= height <= 250:
-                user_data['height'] = height
-                context.user_data['registration_step'] = 'weight'
-                await update.message.reply_text("Введите ваш вес в килограммах:")
-            else:
-                await update.message.reply_text("Пожалуйста, введите корректный рост (100-250 см):")
-        except ValueError:
-            await update.message.reply_text("Пожалуйста, введите рост числом:")
+        height = validate_user_input(text, "height")
+        if height is not None:
+            user_data['height'] = height
+            context.user_data['registration_step'] = 'weight'
+            await update.message.reply_text("Введите ваш вес в килограммах:")
+        else:
+            await update.message.reply_text("Пожалуйста, введите корректный рост (100-250 см):")
     
     elif step == 'weight':
-        try:
-            weight = float(text)
-            if 30 <= weight <= 300:
-                user_data['weight'] = weight
-                context.user_data['registration_step'] = 'activity'
-                
-                keyboard = [
-                    [InlineKeyboardButton("🏢 Сидячая работа (офис, учеба)", callback_data="activity_sedentary")],
-                    [InlineKeyboardButton("🚶 Легкая активность (прогулки, домашние дела)", callback_data="activity_light")],
-                    [InlineKeyboardButton("🏃 Умеренная активность (спорт 3-5 раз/неделю)", callback_data="activity_moderate")],
-                    [InlineKeyboardButton("💪 Высокая активность (спорт 6-7 раз/неделю)", callback_data="activity_high")],
-                    [InlineKeyboardButton("🏗️ Физическая работа (строительство, грузчик)", callback_data="activity_very_high")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await update.message.reply_text(
-                    "🏃‍♂️ **Выберите уровень вашей физической активности:**\n\n"
-                    "Это поможет точно рассчитать вашу суточную норму калорий.\n"
-                    "Выберите тот вариант, который лучше всего описывает ваш образ жизни:",
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("Пожалуйста, введите корректный вес (30-300 кг):")
-        except ValueError:
-            await update.message.reply_text("Пожалуйста, введите вес числом:")
+        weight = validate_user_input(text, "weight")
+        if weight is not None:
+            user_data['weight'] = weight
+            context.user_data['registration_step'] = 'activity'
+            
+            keyboard = [
+                [InlineKeyboardButton("🏢 Сидячая работа (офис, учеба)", callback_data="activity_sedentary")],
+                [InlineKeyboardButton("🚶 Легкая активность (прогулки, домашние дела)", callback_data="activity_light")],
+                [InlineKeyboardButton("🏃 Умеренная активность (спорт 3-5 раз/неделю)", callback_data="activity_moderate")],
+                [InlineKeyboardButton("💪 Высокая активность (спорт 6-7 раз/неделю)", callback_data="activity_high")],
+                [InlineKeyboardButton("🏗️ Физическая работа (строительство, грузчик)", callback_data="activity_very_high")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                "🏃‍♂️ **Выберите уровень вашей физической активности:**\n\n"
+                "Это поможет точно рассчитать вашу суточную норму калорий.\n"
+                "Выберите тот вариант, который лучше всего описывает ваш образ жизни:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text("Пожалуйста, введите корректный вес (30-300 кг):")
     
 
 async def complete_registration(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data: dict):
@@ -1222,31 +1127,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             result = analyze_food_text(text)
             
             # Извлекаем количество калорий из результата
-            try:
-                # Ищем число в результате
-                import re
-                calories_match = re.search(r'(\d+)', result)
-                if calories_match:
-                    calories = int(calories_match.group(1))
-                    # Получаем выбранный тип приема пищи
-                    meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
-                    # Сохраняем в историю
-                    db.add_calorie_record(user_id, f"{meal_type} - {text}", calories, "voice")
-                    
-                    # Получаем общую сумму калорий за сегодня
-                    daily_sum = get_daily_calories_sum(user_id)
-                    daily_calories = user.get('daily_calories', 0)
-                    
-                    # Формируем новый формат ответа
-                    if daily_calories > 0:
-                        percentage = (daily_sum / daily_calories) * 100
-                        result = f"Примерное количество калорий: {calories}\n\nОбщее количество калорий за сегодня: {daily_sum}\n\n📊 Это составляет {percentage:.1f}% от вашей суточной нормы ({daily_calories} ккал)"
-                    else:
-                        result = f"Примерное количество калорий: {calories}\n\nОбщее количество калорий за сегодня: {daily_sum}"
-                else:
-                    logger.warning(f"Could not extract calories from result: {result}")
-            except Exception as e:
-                logger.error(f"Error processing calories from voice: {e}")
+            calories = extract_calories_from_text(result)
+            if calories:
+                # Получаем выбранный тип приема пищи
+                meal_type = context.user_data.get('selected_meal_type', '🍽️ Блюдо')
+                # Сохраняем в историю
+                db.add_calorie_record(user_id, f"{meal_type} - {text}", calories, "voice")
+                
+                # Получаем общую сумму калорий за сегодня
+                daily_sum = get_daily_calories_sum(user_id)
+                daily_calories = user.get('daily_calories', 0)
+                
+                # Формируем ответ
+                result = format_calorie_response(calories, daily_sum, daily_calories)
+            else:
+                logger.warning(f"Could not extract calories from result: {result}")
             
             # Отправляем результат
             await update.message.reply_text(result)
@@ -1260,7 +1155,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.error(f"Error handling voice: {e}")
         await update.message.reply_text("Произошла ошибка при обработке голосового сообщения. Попробуйте еще раз.")
 
-def main() -> None:
+async def main() -> None:
     """Запуск бота"""
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
@@ -1277,7 +1172,7 @@ def main() -> None:
     # Запускаем бота
     print("Бот запущен...")
     print("Автоматический сброс приемов пищи при первом взаимодействии нового дня")
-    application.run_polling()
+    await application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

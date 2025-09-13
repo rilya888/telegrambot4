@@ -1,7 +1,9 @@
 import sqlite3
 import logging
 import os
+import threading
 from typing import Optional, Dict, Any
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
@@ -9,12 +11,27 @@ class UserDatabase:
     def __init__(self, db_path: str = "users.db"):
         self.db_path = db_path
         self.use_postgres = os.getenv('DATABASE_URL') is not None
+        self._lock = threading.Lock()
         self.init_database()
+    
+    @contextmanager
+    def get_connection(self):
+        """Context manager для безопасной работы с базой данных"""
+        with self._lock:
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn.row_factory = sqlite3.Row  # Для удобного доступа к колонкам
+            try:
+                yield conn
+            except Exception as e:
+                conn.rollback()
+                raise e
+            finally:
+                conn.close()
     
     def init_database(self):
         """Инициализация базы данных"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Создаем таблицу пользователей
@@ -51,6 +68,20 @@ class UserDatabase:
                     )
                 ''')
                 
+                # Создаем индексы для оптимизации запросов
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_calorie_history_user_id 
+                    ON calorie_history(user_id)
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_calorie_history_created_at 
+                    ON calorie_history(created_at)
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_calorie_history_user_date 
+                    ON calorie_history(user_id, DATE(created_at))
+                ''')
+                
                 conn.commit()
                 logger.info("Database initialized successfully")
                 
@@ -60,7 +91,7 @@ class UserDatabase:
     def add_user(self, user_data: Dict[str, Any]) -> bool:
         """Добавление нового пользователя"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -95,7 +126,7 @@ class UserDatabase:
     def get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Получение данных пользователя"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -104,8 +135,7 @@ class UserDatabase:
                 
                 row = cursor.fetchone()
                 if row:
-                    columns = [description[0] for description in cursor.description]
-                    return dict(zip(columns, row))
+                    return dict(row)
                 return None
                 
         except Exception as e:
@@ -115,7 +145,7 @@ class UserDatabase:
     def update_user_field(self, user_id: int, field: str, value: Any) -> bool:
         """Обновление конкретного поля пользователя"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute(f'''
@@ -132,7 +162,7 @@ class UserDatabase:
     def add_calorie_record(self, user_id: int, food_description: str, calories: int, analysis_type: str) -> bool:
         """Добавление записи о калориях"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -150,7 +180,7 @@ class UserDatabase:
     def get_user_calorie_history(self, user_id: int, limit: int = 10) -> list:
         """Получение истории калорий пользователя"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -161,8 +191,7 @@ class UserDatabase:
                 ''', (user_id, limit))
                 
                 rows = cursor.fetchall()
-                columns = [description[0] for description in cursor.description]
-                return [dict(zip(columns, row)) for row in rows]
+                return [dict(row) for row in rows]
                 
         except Exception as e:
             logger.error(f"Error getting calorie history: {e}")
@@ -171,7 +200,7 @@ class UserDatabase:
     def get_user_calorie_history_by_period(self, user_id: int, start_date, end_date) -> list:
         """Получение истории калорий пользователя за определенный период"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
@@ -182,8 +211,7 @@ class UserDatabase:
                 ''', (user_id, start_date, end_date))
                 
                 rows = cursor.fetchall()
-                columns = [description[0] for description in cursor.description]
-                return [dict(zip(columns, row)) for row in rows]
+                return [dict(row) for row in rows]
                 
         except Exception as e:
             logger.error(f"Error getting calorie history by period: {e}")
@@ -223,7 +251,7 @@ class UserDatabase:
     def reset_user_data(self, user_id: int) -> bool:
         """Полный сброс данных пользователя"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Удаляем историю калорий
@@ -251,7 +279,7 @@ class UserDatabase:
             
             today = date.today()
             
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Удаляем записи калорий за сегодня
