@@ -292,6 +292,35 @@ class UserDatabase:
             logger.error(f"Error resetting daily calories: {e}")
             return False
     
+    def calculate_daily_calories(self, gender: str, age: int, height: float, weight: float,
+                                activity_level: str) -> int:
+        """Расчет суточной нормы калорий по формуле Миффлина-Сан Жеора"""
+        try:
+            # Базовый метаболизм (BMR) по формуле Миффлина-Сан Жеора
+            if gender.lower() == 'мужской':
+                bmr = 10 * weight + 6.25 * height - 5 * age + 5
+            else:  # женский
+                bmr = 10 * weight + 6.25 * height - 5 * age - 161
+            
+            # Коэффициенты активности
+            activity_multipliers = {
+                'Офисная работа (сидячий образ жизни)': 1.2,
+                'Легкая активность (1-3 тренировки в неделю)': 1.375,
+                'Умеренная активность (3-5 тренировок в неделю)': 1.55,
+                'Высокая активность (6-7 тренировок в неделю)': 1.725,
+                'Физическая работа (очень высокая активность)': 1.9
+            }
+            
+            multiplier = activity_multipliers.get(activity_level, 1.2)
+            daily_calories = int(bmr * multiplier)
+            
+            logger.info(f"Calculated daily calories: {daily_calories} for {gender}, age {age}, height {height}, weight {weight}, activity {activity_level}")
+            return daily_calories
+            
+        except Exception as e:
+            logger.error(f"Error calculating daily calories: {e}")
+            return 2000  # Значение по умолчанию
+    
     def reset_user_data(self, user_id: int) -> bool:
         """Полный сброс данных пользователя"""
         try:
