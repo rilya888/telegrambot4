@@ -377,7 +377,8 @@ async def show_calorie_history(query, context, period="today"):
                     calories = data['calories']
                     meals = data['meals']
                     history_text += f"📅 **{day_name}** ({date_str}): {calories} ккал ({meals} приемов)\n"
-                except:
+                except Exception as e:
+                    logger.warning(f"Error formatting date {date_str}: {e}")
                     history_text += f"📅 **{date_str}**: {data['calories']} ккал ({data['meals']} приемов)\n"
         else:
             # Для сегодня и вчера показываем детальный список
@@ -386,16 +387,26 @@ async def show_calorie_history(query, context, period="today"):
                 try:
                     # Пробуем разные форматы даты
                     created_at = record['created_at']
-                    if 'T' in created_at:
-                        # ISO формат
-                        record_datetime = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    
+                    if isinstance(created_at, str):
+                        if 'T' in created_at:
+                            # ISO формат
+                            record_datetime = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        else:
+                            # SQLite формат
+                            record_datetime = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
                     else:
-                        # SQLite формат
-                        record_datetime = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
+                        # Если это уже объект datetime
+                        record_datetime = created_at
+                    
                     formatted_time = record_datetime.strftime("%H:%M")
-                except:
+                except Exception as e:
                     # Если не удается распарсить дату, показываем как есть
-                    formatted_time = record['created_at'].split(' ')[-1][:5] if ' ' in record['created_at'] else record['created_at']
+                    logger.warning(f"Error parsing time for record: {e}")
+                    if isinstance(record['created_at'], str) and ' ' in record['created_at']:
+                        formatted_time = record['created_at'].split(' ')[-1][:5]
+                    else:
+                        formatted_time = "неизвестно"
                 
                 history_text += f"• {record['food_name']}: {record['calories']} ккал\n"
                 history_text += f"  Источник: {record['source']} | {formatted_time}\n\n"
@@ -488,10 +499,25 @@ def get_daily_calories_sum(user_id):
     
     daily_sum = 0
     for record in history:
-        # Проверяем, что запись за сегодня
-        record_date = datetime.fromisoformat(record['created_at']).date()
-        if record_date == today:
-            daily_sum += record['calories']
+        try:
+            # Проверяем, что запись за сегодня
+            created_at = record['created_at']
+            
+            # Обрабатываем разные форматы даты
+            if isinstance(created_at, str):
+                if 'T' in created_at:
+                    record_date = datetime.fromisoformat(created_at.replace('Z', '+00:00')).date()
+                else:
+                    record_date = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S').date()
+            else:
+                # Если это уже объект datetime
+                record_date = created_at.date()
+            
+            if record_date == today:
+                daily_sum += record['calories']
+        except Exception as e:
+            logger.warning(f"Error parsing date for record {record}: {e}")
+            continue
     
     return daily_sum
 
