@@ -1175,4 +1175,23 @@ async def main() -> None:
     await application.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        # Попробуем запустить с asyncio.run()
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e) or "Cannot close a running event loop" in str(e):
+            # Если event loop уже запущен, используем другой подход
+            try:
+                import nest_asyncio
+                nest_asyncio.apply()
+                asyncio.run(main())
+            except ImportError:
+                # Если nest_asyncio не установлен, используем альтернативный метод
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Создаем новую задачу в существующем loop
+                    loop.create_task(main())
+                else:
+                    loop.run_until_complete(main())
+        else:
+            raise e
