@@ -66,7 +66,7 @@ class UserDatabase:
                         user_id BIGINT,
                         food_name TEXT,
                         calories INTEGER,
-                        source VARCHAR(20),
+                        source TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (user_id) REFERENCES users(user_id)
                     )
@@ -132,10 +132,24 @@ class UserDatabase:
                     # Переименовываем старые колонки в новые
                     cursor.execute('ALTER TABLE calorie_history RENAME COLUMN meal_type TO food_name')
                     cursor.execute('ALTER TABLE calorie_history RENAME COLUMN description TO source')
+                    # Изменяем тип колонки source на TEXT для поддержки длинных значений
+                    cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
                     conn.commit()
                     logger.info("Calorie history table migrated successfully")
                 else:
-                    logger.info("Calorie history table structure is up to date")
+                    # Проверяем, нужно ли обновить тип колонки source
+                    cursor.execute('''
+                        SELECT data_type FROM information_schema.columns 
+                        WHERE table_name = 'calorie_history' AND column_name = 'source'
+                    ''')
+                    result = cursor.fetchone()
+                    if result and 'character varying' in result[0]:
+                        logger.info("Updating source column type to TEXT...")
+                        cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
+                        conn.commit()
+                        logger.info("Source column type updated successfully")
+                    else:
+                        logger.info("Calorie history table structure is up to date")
             else:
                 # Для SQLite проверяем существование колонки
                 cursor.execute("PRAGMA table_info(calorie_history)")
