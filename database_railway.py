@@ -150,6 +150,15 @@ class UserDatabase:
                         logger.info("Source column type updated successfully")
                     else:
                         logger.info("Calorie history table structure is up to date")
+                
+                # Принудительно проверяем и исправляем тип колонки source
+                logger.info("Force checking source column type...")
+                try:
+                    cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
+                    conn.commit()
+                    logger.info("Source column type force updated to TEXT")
+                except Exception as e:
+                    logger.info(f"Source column already TEXT or error: {e}")
             else:
                 # Для SQLite проверяем существование колонки
                 cursor.execute("PRAGMA table_info(calorie_history)")
@@ -271,6 +280,15 @@ class UserDatabase:
             logger.info(f"Adding calorie record: user_id={user_id}, food_name={food_name}, calories={calories}, source={source}")
             conn = self.get_connection()
             cursor = conn.cursor()
+            
+            # Принудительно исправляем тип колонки source перед вставкой
+            if self.use_postgres:
+                try:
+                    cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
+                    conn.commit()
+                    logger.info("Source column type fixed to TEXT before insert")
+                except Exception as e:
+                    logger.info(f"Source column type check: {e}")
             
             if self.use_postgres:
                 cursor.execute('''
