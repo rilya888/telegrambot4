@@ -154,11 +154,38 @@ class UserDatabase:
                 # Принудительно проверяем и исправляем тип колонки source
                 logger.info("Force checking source column type...")
                 try:
-                    cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
-                    conn.commit()
-                    logger.info("Source column type force updated to TEXT")
+                    # Сначала проверяем текущий тип колонки
+                    cursor.execute('''
+                        SELECT data_type, character_maximum_length 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'calorie_history' AND column_name = 'source'
+                    ''')
+                    result = cursor.fetchone()
+                    if result:
+                        data_type, max_length = result
+                        logger.info(f"Current source column type: {data_type}, max_length: {max_length}")
+                        
+                        # Если это VARCHAR с ограничением, изменяем на TEXT
+                        if 'character varying' in data_type and max_length and max_length < 1000:
+                            logger.info("Converting VARCHAR to TEXT...")
+                            cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
+                            conn.commit()
+                            logger.info("Source column type updated to TEXT")
+                        else:
+                            logger.info("Source column type is already suitable")
+                    else:
+                        logger.info("Source column not found, creating as TEXT")
+                        cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
+                        conn.commit()
                 except Exception as e:
-                    logger.info(f"Source column already TEXT or error: {e}")
+                    logger.error(f"Error updating source column type: {e}")
+                    # Попробуем альтернативный способ
+                    try:
+                        cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE VARCHAR(1000)')
+                        conn.commit()
+                        logger.info("Source column type updated to VARCHAR(1000)")
+                    except Exception as e2:
+                        logger.error(f"Alternative update also failed: {e2}")
             else:
                 # Для SQLite проверяем существование колонки
                 cursor.execute("PRAGMA table_info(calorie_history)")
@@ -277,6 +304,18 @@ class UserDatabase:
     def add_calorie_record(self, user_id: int, food_name: str, calories: int, source: str) -> bool:
         """Добавление записи о калориях"""
         try:
+            # Обрезаем длинные значения, если они слишком большие
+            max_food_name_length = 255
+            max_source_length = 1000
+            
+            if len(food_name) > max_food_name_length:
+                food_name = food_name[:max_food_name_length-3] + "..."
+                logger.warning(f"Food name truncated to {max_food_name_length} characters")
+            
+            if len(source) > max_source_length:
+                source = source[:max_source_length-3] + "..."
+                logger.warning(f"Source truncated to {max_source_length} characters")
+            
             logger.info(f"Adding calorie record: user_id={user_id}, food_name={food_name}, calories={calories}, source={source}")
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -284,11 +323,22 @@ class UserDatabase:
             # Принудительно исправляем тип колонки source перед вставкой
             if self.use_postgres:
                 try:
-                    cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
-                    conn.commit()
-                    logger.info("Source column type fixed to TEXT before insert")
+                    # Проверяем и обновляем тип колонки source
+                    cursor.execute('''
+                        SELECT data_type, character_maximum_length 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'calorie_history' AND column_name = 'source'
+                    ''')
+                    result = cursor.fetchone()
+                    if result:
+                        data_type, max_length = result
+                        if 'character varying' in data_type and max_length and max_length < 1000:
+                            logger.info("Converting source column to TEXT before insert...")
+                            cursor.execute('ALTER TABLE calorie_history ALTER COLUMN source TYPE TEXT')
+                            conn.commit()
+                            logger.info("Source column type updated to TEXT")
                 except Exception as e:
-                    logger.info(f"Source column type check: {e}")
+                    logger.warning(f"Could not update source column type: {e}")
             
             if self.use_postgres:
                 cursor.execute('''
