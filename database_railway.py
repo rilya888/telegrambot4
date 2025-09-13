@@ -64,9 +64,9 @@ class UserDatabase:
                     CREATE TABLE IF NOT EXISTS calorie_history (
                         id SERIAL PRIMARY KEY,
                         user_id BIGINT,
+                        food_name TEXT,
                         calories INTEGER,
-                        meal_type VARCHAR(20),
-                        description TEXT,
+                        source VARCHAR(20),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (user_id) REFERENCES users(user_id)
                     )
@@ -96,9 +96,9 @@ class UserDatabase:
                     CREATE TABLE IF NOT EXISTS calorie_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id INTEGER,
+                        food_name TEXT,
                         calories INTEGER,
-                        meal_type TEXT,
-                        description TEXT,
+                        source TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (user_id) REFERENCES users(user_id)
                     )
@@ -108,8 +108,73 @@ class UserDatabase:
             conn.close()
             logger.info("Database initialized successfully")
             
+            # Проверяем и обновляем структуру таблицы calorie_history
+            self.migrate_calorie_history_table()
+            
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
+    
+    def migrate_calorie_history_table(self):
+        """Миграция таблицы calorie_history для обновления структуры"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            if self.use_postgres:
+                # Проверяем, существует ли колонка food_name
+                cursor.execute('''
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name = 'calorie_history' AND column_name = 'food_name'
+                ''')
+                
+                if not cursor.fetchone():
+                    logger.info("Migrating calorie_history table structure...")
+                    # Переименовываем старые колонки в новые
+                    cursor.execute('ALTER TABLE calorie_history RENAME COLUMN meal_type TO food_name')
+                    cursor.execute('ALTER TABLE calorie_history RENAME COLUMN description TO source')
+                    conn.commit()
+                    logger.info("Calorie history table migrated successfully")
+                else:
+                    logger.info("Calorie history table structure is up to date")
+            else:
+                # Для SQLite проверяем существование колонки
+                cursor.execute("PRAGMA table_info(calorie_history)")
+                columns = [row[1] for row in cursor.fetchall()]
+                
+                if 'food_name' not in columns:
+                    logger.info("Migrating SQLite calorie_history table structure...")
+                    # Создаем новую таблицу с правильной структурой
+                    cursor.execute('''
+                        CREATE TABLE calorie_history_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            food_name TEXT,
+                            calories INTEGER,
+                            source TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(user_id)
+                        )
+                    ''')
+                    
+                    # Копируем данные из старой таблицы
+                    cursor.execute('''
+                        INSERT INTO calorie_history_new (id, user_id, calories, food_name, source, created_at)
+                        SELECT id, user_id, calories, meal_type, description, created_at
+                        FROM calorie_history
+                    ''')
+                    
+                    # Удаляем старую таблицу и переименовываем новую
+                    cursor.execute('DROP TABLE calorie_history')
+                    cursor.execute('ALTER TABLE calorie_history_new RENAME TO calorie_history')
+                    conn.commit()
+                    logger.info("SQLite calorie history table migrated successfully")
+                else:
+                    logger.info("SQLite calorie history table structure is up to date")
+            
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Error migrating calorie_history table: {e}")
     
     def add_user(self, user_data: Dict[str, Any]) -> bool:
         """Добавление или обновление пользователя"""
