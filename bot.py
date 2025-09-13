@@ -990,8 +990,7 @@ async def complete_registration(update: Update, context: ContextTypes.DEFAULT_TY
             user_data.get('age'),
             user_data.get('height'),
             user_data.get('weight'),
-            user_data.get('activity_level'),
-            user_data.get('workouts_per_week', 0)
+            user_data.get('activity_level')
         )
         user_data['daily_calories'] = daily_calories
         
