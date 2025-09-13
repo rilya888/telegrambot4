@@ -186,7 +186,7 @@ class UserDatabase:
             logger.error(f"Error getting user: {e}")
             return None
     
-    def add_calorie_record(self, user_id: int, calories: int, meal_type: str, description: str = "") -> bool:
+    def add_calorie_record(self, user_id: int, food_name: str, calories: int, source: str) -> bool:
         """Добавление записи о калориях"""
         try:
             conn = self.get_connection()
@@ -194,14 +194,14 @@ class UserDatabase:
             
             if self.use_postgres:
                 cursor.execute('''
-                    INSERT INTO calorie_history (user_id, calories, meal_type, description)
+                    INSERT INTO calorie_history (user_id, food_name, calories, source)
                     VALUES (%s, %s, %s, %s)
-                ''', (user_id, calories, meal_type, description))
+                ''', (user_id, food_name, calories, source))
             else:
                 cursor.execute('''
-                    INSERT INTO calorie_history (user_id, calories, meal_type, description)
+                    INSERT INTO calorie_history (user_id, food_name, calories, source)
                     VALUES (?, ?, ?, ?)
-                ''', (user_id, calories, meal_type, description))
+                ''', (user_id, food_name, calories, source))
             
             conn.commit()
             conn.close()
