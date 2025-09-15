@@ -47,7 +47,6 @@ class UserDatabase:
                         height REAL,
                         weight REAL,
                         activity_level TEXT,
-                        workouts_per_week INTEGER,
                         workout_types TEXT,
                         daily_calories INTEGER,
                         registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -97,8 +96,8 @@ class UserDatabase:
                 cursor.execute('''
                     INSERT OR REPLACE INTO users 
                     (user_id, username, first_name, last_name, name, gender, age, height, weight, 
-                     activity_level, workouts_per_week, workout_types, daily_calories)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     activity_level, workout_types, daily_calories)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     user_data['user_id'],
                     user_data.get('username'),
@@ -110,7 +109,6 @@ class UserDatabase:
                     user_data.get('height'),
                     user_data.get('weight'),
                     user_data.get('activity_level'),
-                    user_data.get('workouts_per_week'),
                     user_data.get('workout_types'),
                     user_data.get('daily_calories')
                 ))
@@ -218,7 +216,7 @@ class UserDatabase:
             return []
     
     def calculate_daily_calories(self, gender: str, age: int, height: float, weight: float, 
-                                activity_level: str, workouts_per_week: int) -> int:
+                                activity_level: str) -> int:
         """Расчет суточных калорий по формуле Миффлина-Сан Жеора"""
         try:
             # Базовый метаболизм (BMR)
@@ -236,10 +234,7 @@ class UserDatabase:
                 'физическая работа': 1.9         # Очень интенсивные упражнения, физическая работа
             }
             
-            # Дополнительный коэффициент для тренировок
-            workout_bonus = workouts_per_week * 0.05  # 5% за каждую тренировку
-            
-            multiplier = activity_multipliers.get(activity_level.lower(), 1.2) + workout_bonus
+            multiplier = activity_multipliers.get(activity_level.lower(), 1.2)
             
             daily_calories = int(bmr * multiplier)
             return daily_calories

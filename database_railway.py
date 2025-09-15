@@ -53,7 +53,6 @@ class UserDatabase:
                         height REAL,
                         weight REAL,
                         activity_level VARCHAR(50),
-                        workouts_per_week INTEGER,
                         daily_calories INTEGER,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -85,7 +84,6 @@ class UserDatabase:
                         height REAL,
                         weight REAL,
                         activity_level TEXT,
-                        workouts_per_week INTEGER,
                         daily_calories INTEGER,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -235,8 +233,8 @@ class UserDatabase:
             if self.use_postgres:
                 cursor.execute('''
                     INSERT INTO users (user_id, username, first_name, last_name, name, gender, 
-                                    age, height, weight, activity_level, workouts_per_week, daily_calories)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    age, height, weight, activity_level, daily_calories)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id) DO UPDATE SET
                         username = EXCLUDED.username,
                         first_name = EXCLUDED.first_name,
@@ -247,27 +245,24 @@ class UserDatabase:
                         height = EXCLUDED.height,
                         weight = EXCLUDED.weight,
                         activity_level = EXCLUDED.activity_level,
-                        workouts_per_week = EXCLUDED.workouts_per_week,
                         daily_calories = EXCLUDED.daily_calories,
                         updated_at = CURRENT_TIMESTAMP
                 ''', (
                     user_data['user_id'], user_data.get('username'), user_data.get('first_name'),
                     user_data.get('last_name'), user_data.get('name'), user_data.get('gender'),
                     user_data.get('age'), user_data.get('height'), user_data.get('weight'),
-                    user_data.get('activity_level'), user_data.get('workouts_per_week', 0),
-                    user_data.get('daily_calories')
+                    user_data.get('activity_level'), user_data.get('daily_calories')
                 ))
             else:
                 cursor.execute('''
                     INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, name, gender, 
-                                                age, height, weight, activity_level, workouts_per_week, daily_calories)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                age, height, weight, activity_level, daily_calories)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     user_data['user_id'], user_data.get('username'), user_data.get('first_name'),
                     user_data.get('last_name'), user_data.get('name'), user_data.get('gender'),
                     user_data.get('age'), user_data.get('height'), user_data.get('weight'),
-                    user_data.get('activity_level'), user_data.get('workouts_per_week', 0),
-                    user_data.get('daily_calories')
+                    user_data.get('activity_level'), user_data.get('daily_calories')
                 ))
             
             conn.commit()

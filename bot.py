@@ -634,7 +634,6 @@ async def handle_activity_selection(query, context):
     
     activity_level = activity_map.get(query.data, "умеренная активность")
     context.user_data['registration_data']['activity_level'] = activity_level
-    context.user_data['registration_data']['workouts_per_week'] = 0  # Устанавливаем 0 по умолчанию
     context.user_data['registration_step'] = 'complete'
     
     # Завершаем регистрацию
