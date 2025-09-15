@@ -1,7 +1,9 @@
 import os
 import logging
-from typing import Optional, Dict, Any
+import threading
 import sqlite3
+from typing import Optional, Dict, Any
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
@@ -9,39 +11,65 @@ class UserDatabase:
     def __init__(self, db_path: str = "users.db"):
         self.db_path = db_path
         self.use_postgres = os.getenv('DATABASE_URL') is not None
+        self._lock = threading.Lock()  # Для thread-safety
         self.init_database()
     
+    @contextmanager
     def get_connection(self):
-        """Получение соединения с базой данных"""
-        if self.use_postgres:
-            try:
-                import psycopg2
-                from urllib.parse import urlparse
-                
-                url = urlparse(os.getenv('DATABASE_URL'))
-                conn = psycopg2.connect(
-                    database=url.path[1:],
-                    user=url.username,
-                    password=url.password,
-                    host=url.hostname,
-                    port=url.port
-                )
-                return conn
-            except ImportError:
-                logger.warning("psycopg2 not available, falling back to SQLite")
-                return sqlite3.connect(self.db_path)
-        else:
-            return sqlite3.connect(self.db_path)
+        """Context manager для безопасной работы с базой данных"""
+        with self._lock:
+            if self.use_postgres:
+                try:
+                    import psycopg2
+                    from urllib.parse import urlparse
+                    
+                    url = urlparse(os.getenv('DATABASE_URL'))
+                    conn = psycopg2.connect(
+                        database=url.path[1:],
+                        user=url.username,
+                        password=url.password,
+                        host=url.hostname,
+                        port=url.port,
+                        connect_timeout=10
+                    )
+                    try:
+                        yield conn
+                    except Exception as e:
+                        conn.rollback()
+                        raise e
+                    finally:
+                        conn.close()
+                except ImportError:
+                    logger.warning("psycopg2 not available, falling back to SQLite")
+                    conn = sqlite3.connect(self.db_path, timeout=30.0)
+                    conn.row_factory = sqlite3.Row
+                    try:
+                        yield conn
+                    except Exception as e:
+                        conn.rollback()
+                        raise e
+                    finally:
+                        conn.close()
+            else:
+                conn = sqlite3.connect(self.db_path, timeout=30.0)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                except Exception as e:
+                    conn.rollback()
+                    raise e
+                finally:
+                    conn.close()
     
     def init_database(self):
         """Инициализация базы данных"""
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            if self.use_postgres:
-                # PostgreSQL таблицы
-                cursor.execute('''
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                if self.use_postgres:
+                    # PostgreSQL таблицы
+                    cursor.execute('''
                     CREATE TABLE IF NOT EXISTS users (
                         user_id BIGINT PRIMARY KEY,
                         username VARCHAR(255),
@@ -70,9 +98,9 @@ class UserDatabase:
                         FOREIGN KEY (user_id) REFERENCES users(user_id)
                     )
                 ''')
-            else:
-                # SQLite таблицы
-                cursor.execute('''
+                else:
+                    # SQLite таблицы
+                    cursor.execute('''
                     CREATE TABLE IF NOT EXISTS users (
                         user_id INTEGER PRIMARY KEY,
                         username TEXT,
@@ -101,9 +129,8 @@ class UserDatabase:
                         FOREIGN KEY (user_id) REFERENCES users(user_id)
                     )
                 ''')
-            
-            conn.commit()
-            conn.close()
+                
+                conn.commit()
             
             # Очищаем поврежденные данные
             self.clean_corrupted_data()
@@ -251,11 +278,11 @@ class UserDatabase:
     def add_user(self, user_data: Dict[str, Any]) -> bool:
         """Добавление или обновление пользователя"""
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            if self.use_postgres:
-                cursor.execute('''
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                if self.use_postgres:
+                    cursor.execute('''
                     INSERT INTO users (user_id, username, first_name, last_name, name, gender, 
                                     age, height, weight, activity_level, daily_calories)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -276,9 +303,9 @@ class UserDatabase:
                     user_data.get('last_name'), user_data.get('name'), user_data.get('gender'),
                     user_data.get('age'), user_data.get('height'), user_data.get('weight'),
                     user_data.get('activity_level'), user_data.get('daily_calories')
-                ))
-            else:
-                cursor.execute('''
+                ''')
+                else:
+                    cursor.execute('''
                     INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, name, gender, 
                                                 age, height, weight, activity_level, daily_calories)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -287,12 +314,11 @@ class UserDatabase:
                     user_data.get('last_name'), user_data.get('name'), user_data.get('gender'),
                     user_data.get('age'), user_data.get('height'), user_data.get('weight'),
                     user_data.get('activity_level'), user_data.get('daily_calories')
-                ))
-            
-            conn.commit()
-            conn.close()
-            logger.info(f"User {user_data['user_id']} added/updated successfully")
-            return True
+                ''')
+                
+                conn.commit()
+                logger.info(f"User {user_data['user_id']} added/updated successfully")
+                return True
             
         except Exception as e:
             logger.error(f"Error adding user: {e}")
@@ -555,16 +581,16 @@ class UserDatabase:
             cursor = conn.cursor()
             
             if self.use_postgres:
-                # Для PostgreSQL используем регулярное выражение
+                # Для PostgreSQL удаляем записи где calories не является числом
                 cursor.execute('''
                     DELETE FROM calorie_history 
-                    WHERE calories::text !~ '^[0-9]+$'
+                    WHERE NOT (calories::text ~ '^[0-9]+$' AND calories > 0)
                 ''')
             else:
                 # Для SQLite используем GLOB
                 cursor.execute('''
                     DELETE FROM calorie_history 
-                    WHERE calories NOT GLOB '[0-9]*'
+                    WHERE calories NOT GLOB '[0-9]*' OR calories <= 0
                 ''')
             
             deleted_count = cursor.rowcount

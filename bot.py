@@ -1,19 +1,19 @@
 import logging
 import io
 import os
+import tempfile
+import asyncio
+from datetime import datetime, time
+from typing import Optional, Dict, Any
+from collections import OrderedDict
 import speech_recognition as sr
 from pydub import AudioSegment
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-try:
-    from database_railway import UserDatabase
-except ImportError:
-    from database import UserDatabase
-import asyncio
-from datetime import datetime, time
-from typing import Optional, Dict, Any
 
 # Импортируем наши модули
+from database import UserDatabase
+
 from config import setup_logging, API_CACHE_SIZE, BOT_TOKEN
 from utils import (
     validate_user_input, extract_calories_from_text, 
@@ -27,9 +27,21 @@ logger = setup_logging()
 # Инициализация базы данных
 db = UserDatabase()
 
-# Кэш для API запросов
-api_cache = {}
+# Оптимизированный кэш с ограничением размера (LRU)
+api_cache = OrderedDict()
 
+
+def _update_cache(cache: OrderedDict, key: str, value: str, max_size: int):
+    """Обновление кэша с LRU логикой"""
+    if key in cache:
+        # Перемещаем в конец (последний использованный)
+        cache.move_to_end(key)
+    else:
+        # Добавляем новый элемент
+        cache[key] = value
+        # Если превышен лимит, удаляем самый старый элемент
+        if len(cache) > max_size:
+            cache.popitem(last=False)
 
 def analyze_food_image(image_data: bytes) -> str:
     """Анализ изображения еды через Nebius API с кэшированием"""
@@ -40,14 +52,15 @@ def analyze_food_image(image_data: bytes) -> str:
         # Проверяем кэш
         if image_hash in api_cache:
             logger.info("Using cached result for image analysis")
+            # Перемещаем в конец для LRU
+            api_cache.move_to_end(image_hash)
             return api_cache[image_hash]
         
         # Анализируем изображение через API клиент
         result_text = api_client.analyze_image(image_data)
         
-        # Сохраняем в кэш (ограничиваем размер кэша)
-        if len(api_cache) < API_CACHE_SIZE:
-            api_cache[image_hash] = result_text
+        # Сохраняем в кэш с LRU логикой
+        _update_cache(api_cache, image_hash, result_text, API_CACHE_SIZE)
         
         return result_text
         
@@ -114,14 +127,15 @@ def analyze_food_text(text_description: str) -> str:
         # Проверяем кэш
         if text_hash in api_cache:
             logger.info("Using cached result for text analysis")
+            # Перемещаем в конец для LRU
+            api_cache.move_to_end(text_hash)
             return api_cache[text_hash]
         
         # Анализируем текст через API клиент
         result_text = api_client.analyze_text(text_description)
         
-        # Сохраняем в кэш (ограничиваем размер кэша)
-        if len(api_cache) < API_CACHE_SIZE:
-            api_cache[text_hash] = result_text
+        # Сохраняем в кэш с LRU логикой
+        _update_cache(api_cache, text_hash, result_text, API_CACHE_SIZE)
         
         return result_text
         
@@ -129,15 +143,20 @@ def analyze_food_text(text_description: str) -> str:
         logger.error(f"Error analyzing text: {e}")
         return "Произошла ошибка при анализе описания. Попробуйте еще раз."
 
-def transcribe_voice(audio_data):
-    """Транскрипция голосового сообщения в текст"""
-    temp_ogg_path = "temp_audio.ogg"
-    temp_wav_path = "temp_audio.wav"
+def transcribe_voice(audio_data: bytes) -> Optional[str]:
+    """Транскрипция голосового сообщения в текст с использованием временных файлов"""
+    temp_files = []
     
     try:
-        # Создаем временный файл для аудио
-        with open(temp_ogg_path, "wb") as f:
-            f.write(audio_data)
+        # Создаем временные файлы с уникальными именами
+        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_ogg:
+            temp_ogg.write(audio_data)
+            temp_ogg_path = temp_ogg.name
+            temp_files.append(temp_ogg_path)
+        
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
+            temp_wav_path = temp_wav.name
+            temp_files.append(temp_wav_path)
         
         # Конвертируем OGG в WAV
         audio = AudioSegment.from_ogg(temp_ogg_path)
@@ -148,17 +167,24 @@ def transcribe_voice(audio_data):
         
         # Распознаем речь
         with sr.AudioFile(temp_wav_path) as source:
-            audio_data = recognizer.record(source)
-            text = recognizer.recognize_google(audio_data, language="ru-RU")
+            audio_record = recognizer.record(source)
+            text = recognizer.recognize_google(audio_record, language="ru-RU")
         
+        logger.info(f"Successfully transcribed voice: {text[:50]}...")
         return text
         
+    except sr.UnknownValueError:
+        logger.warning("Could not understand audio")
+        return None
+    except sr.RequestError as e:
+        logger.error(f"Error with speech recognition service: {e}")
+        return None
     except Exception as e:
         logger.error(f"Error transcribing voice: {e}")
         return None
     finally:
         # Удаляем временные файлы в любом случае
-        for temp_file in [temp_ogg_path, temp_wav_path]:
+        for temp_file in temp_files:
             try:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)

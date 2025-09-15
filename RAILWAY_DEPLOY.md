@@ -53,15 +53,19 @@ NEBUS_API_KEY=your_nebius_api_key_here
 
 ```
 telegrambot4/
-├── bot.py                 # Основной файл бота
-├── database_railway.py    # База данных для Railway (PostgreSQL)
-├── database.py           # База данных для локальной разработки (SQLite)
+├── bot.py                 # Основной файл бота (оптимизированный)
+├── database.py           # Универсальная база данных (SQLite/PostgreSQL)
+├── api_client.py         # Клиент для работы с Nebius API
+├── config.py             # Конфигурация
+├── utils.py              # Утилиты
 ├── requirements.txt      # Зависимости Python
 ├── Procfile             # Конфигурация для Railway
 ├── railway.json         # Дополнительная конфигурация Railway
 ├── .gitignore           # Игнорируемые файлы
 ├── env.example          # Пример переменных окружения
-└── README.md            # Документация
+├── README.md            # Документация
+├── OPTIMIZATIONS_APPLIED.md  # Описание оптимизаций
+└── OPTIMIZATION_REPORT.md    # Отчет об оптимизации
 ```
 
 ## Возможные проблемы

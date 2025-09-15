@@ -7,6 +7,8 @@ from typing import Optional
 from PIL import Image
 import io
 import base64
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from config import NEBUS_API_KEY, NEBUS_API_URL, API_TIMEOUT, IMAGE_MAX_SIZE, IMAGE_QUALITY
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,24 @@ class NebiusAPIClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        
+        # Создаем оптимизированную сессию с retry логикой
+        self.session = requests.Session()
+        
+        # Настройка retry стратегии
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["POST"]
+        )
+        
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        
+        # Устанавливаем таймауты
+        self.session.timeout = API_TIMEOUT
     
     def _prepare_image(self, image_data: bytes) -> str:
         """Подготовка изображения для API"""
@@ -71,12 +91,11 @@ class NebiusAPIClient:
                 "temperature": 0.1
             }
             
-            # Отправляем запрос к API
-            response = requests.post(
+            # Отправляем запрос к API с оптимизированной сессией
+            response = self.session.post(
                 f"{self.api_url}chat/completions",
                 headers=self.headers,
-                json=data,
-                timeout=API_TIMEOUT
+                json=data
             )
             
             if response.status_code == 200:
@@ -117,12 +136,11 @@ class NebiusAPIClient:
                 "temperature": 0.1
             }
             
-            # Отправляем запрос к API
-            response = requests.post(
+            # Отправляем запрос к API с оптимизированной сессией
+            response = self.session.post(
                 f"{self.api_url}chat/completions",
                 headers=self.headers,
-                json=data,
-                timeout=API_TIMEOUT
+                json=data
             )
             
             if response.status_code == 200:

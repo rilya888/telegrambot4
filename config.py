@@ -24,9 +24,9 @@ DATABASE_PATH = "users.db"
 
 # Настройки API
 API_TIMEOUT = 30
-API_CACHE_SIZE = 100
-IMAGE_MAX_SIZE = (1024, 1024)
-IMAGE_QUALITY = 85
+API_CACHE_SIZE = 50  # Уменьшили размер кэша для экономии памяти
+IMAGE_MAX_SIZE = (800, 800)  # Уменьшили размер для экономии трафика
+IMAGE_QUALITY = 75  # Немного снизили качество для экономии трафика
 
 # Настройки валидации
 VALIDATION_LIMITS = {
