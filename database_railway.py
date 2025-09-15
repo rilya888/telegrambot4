@@ -104,6 +104,10 @@ class UserDatabase:
             
             conn.commit()
             conn.close()
+            
+            # Очищаем поврежденные данные
+            self.clean_corrupted_data()
+            
             logger.info("Database initialized successfully")
             
             # Проверяем и обновляем структуру таблицы calorie_history
@@ -544,7 +548,39 @@ class UserDatabase:
             logger.error(f"Error resetting daily calories: {e}")
             return False
     
-    def calculate_daily_calories(self, gender: str, age: int, height: float, weight: float,
+    def clean_corrupted_data(self) -> bool:
+        """Очистка поврежденных данных в базе"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            if self.use_postgres:
+                # Для PostgreSQL используем регулярное выражение
+                cursor.execute('''
+                    DELETE FROM calorie_history 
+                    WHERE calories::text !~ '^[0-9]+$'
+                ''')
+            else:
+                # Для SQLite используем GLOB
+                cursor.execute('''
+                    DELETE FROM calorie_history 
+                    WHERE calories NOT GLOB '[0-9]*'
+                ''')
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if deleted_count > 0:
+                logger.info(f"Cleaned {deleted_count} corrupted calorie records")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error cleaning corrupted data: {e}")
+            return False
+    
+    def calculate_daily_calories(self, gender: str, age: int, height: float, weight: float, 
                                 activity_level: str) -> int:
         """Расчет суточной нормы калорий по формуле Миффлина-Сан Жеора"""
         try:

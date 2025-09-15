@@ -82,6 +82,10 @@ class UserDatabase:
                 ''')
                 
                 conn.commit()
+                
+                # Очищаем поврежденные данные
+                self.clean_corrupted_data()
+                
                 logger.info("Database initialized successfully")
                 
         except Exception as e:
@@ -264,6 +268,30 @@ class UserDatabase:
         except Exception as e:
             logger.error(f"Error getting weekly calories summary: {e}")
             return {'daily_data': {}, 'total_weekly': 0}
+    
+    def clean_corrupted_data(self) -> bool:
+        """Очистка поврежденных данных в базе"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Удаляем записи где calories не является числом
+                cursor.execute('''
+                    DELETE FROM calorie_history 
+                    WHERE calories NOT GLOB '[0-9]*'
+                ''')
+                
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                if deleted_count > 0:
+                    logger.info(f"Cleaned {deleted_count} corrupted calorie records")
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error cleaning corrupted data: {e}")
+            return False
     
     def calculate_daily_calories(self, gender: str, age: int, height: float, weight: float, 
                                 activity_level: str) -> int:
