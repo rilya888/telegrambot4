@@ -184,6 +184,26 @@ class UserDatabase:
                         logger.info("Source column type updated to VARCHAR(1000)")
                     except Exception as e2:
                         logger.error(f"Alternative update also failed: {e2}")
+                
+                # Удаляем столбец workouts_per_week если он существует
+                logger.info("Checking for workouts_per_week column...")
+                try:
+                    cursor.execute('''
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'users' 
+                        AND column_name = 'workouts_per_week'
+                    ''')
+                    result = cursor.fetchone()
+                    if result:
+                        logger.info("Found workouts_per_week column, removing it...")
+                        cursor.execute('ALTER TABLE users DROP COLUMN workouts_per_week')
+                        conn.commit()
+                        logger.info("workouts_per_week column removed successfully")
+                    else:
+                        logger.info("workouts_per_week column not found, no action needed")
+                except Exception as e:
+                    logger.info(f"workouts_per_week column removal: {e}")
             else:
                 # Для SQLite проверяем существование колонки
                 cursor.execute("PRAGMA table_info(calorie_history)")
