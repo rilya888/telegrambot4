@@ -526,49 +526,7 @@ async def check_and_reset_daily_meals(context):
 
 # Удаляем сложные функции планировщика - используем простую логику проверки при каждом взаимодействии
 
-def get_daily_calories_sum(user_id):
-    """Получает общую сумму калорий за сегодня"""
-    from datetime import date, datetime
-    
-    today = date.today()
-    history = db.get_user_calorie_history(user_id, limit=100)  # Получаем больше записей
-    logger.info(f"Retrieved {len(history)} total records for user {user_id}")
-    
-    daily_sum = 0
-    for record in history:
-        try:
-            # Проверяем, что запись за сегодня
-            created_at = record['created_at']
-            
-            # Обрабатываем разные форматы даты
-            if isinstance(created_at, str):
-                if 'T' in created_at:
-                    record_date = datetime.fromisoformat(created_at.replace('Z', '+00:00')).date()
-                else:
-                    record_date = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S').date()
-            else:
-                # Если это уже объект datetime
-                record_date = created_at.date()
-            
-            if record_date == today:
-                # Убеждаемся, что calories - это число
-                calories = record['calories']
-                if isinstance(calories, str):
-                    try:
-                        calories = int(calories)
-                    except ValueError:
-                        logger.warning(f"Invalid calories value: {calories}")
-                        continue
-                
-                daily_sum += calories
-                logger.info(f"Added {calories} calories from {record['food_name']} for today")
-        except Exception as e:
-            logger.warning(f"Error parsing date for record {record}: {e}")
-            continue
-    
-    logger.info(f"Total daily calories for user {user_id}: {daily_sum}")
-    
-    return daily_sum
+# Функция get_daily_calories_sum теперь используется из базы данных
 
 async def show_meal_type_menu(query, context):
     """Показать меню выбора типа приема пищи"""
@@ -772,7 +730,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             logger.info(f"Saved photo analysis: {calories} calories for user {user_id}")
             
             # Получаем общую сумму калорий за сегодня
-            daily_sum = get_daily_calories_sum(user_id)
+            daily_sum = db.get_daily_calories_sum(user_id)
             daily_calories = user.get('daily_calories', 0)
             
             # Формируем ответ
@@ -863,7 +821,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             db.add_calorie_record(user_id, meal_type, calories, "text")
             
             # Получаем общую сумму калорий за сегодня
-            daily_sum = get_daily_calories_sum(user_id)
+            daily_sum = db.get_daily_calories_sum(user_id)
             daily_calories = user.get('daily_calories', 0)
             
             # Формируем ответ

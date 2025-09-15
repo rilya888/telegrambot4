@@ -121,55 +121,55 @@ class UserDatabase:
                 else:
                     # SQLite таблицы
                     cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS users (
-                            user_id INTEGER PRIMARY KEY,
-                            username TEXT,
-                            first_name TEXT,
-                            last_name TEXT,
-                            name TEXT,
-                            gender TEXT,
-                            age INTEGER,
-                            height REAL,
-                            weight REAL,
-                            activity_level TEXT,
-                            daily_calories INTEGER,
+                    CREATE TABLE IF NOT EXISTS users (
+                        user_id INTEGER PRIMARY KEY,
+                        username TEXT,
+                        first_name TEXT,
+                        last_name TEXT,
+                        name TEXT,
+                        gender TEXT,
+                        age INTEGER,
+                        height REAL,
+                        weight REAL,
+                        activity_level TEXT,
+                        daily_calories INTEGER,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    ''')
-                    
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS calorie_history (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            user_id INTEGER,
+                    )
+                ''')
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS calorie_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
                             food_name TEXT,
-                            calories INTEGER,
+                        calories INTEGER,
                             source TEXT,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             FOREIGN KEY (user_id) REFERENCES users(user_id)
-                        )
-                    ''')
-                    
+                    )
+                ''')
+                
                     # Создаем индексы для оптимизации
-                    cursor.execute('''
-                        CREATE INDEX IF NOT EXISTS idx_calorie_history_user_id 
-                        ON calorie_history(user_id)
-                    ''')
-                    cursor.execute('''
-                        CREATE INDEX IF NOT EXISTS idx_calorie_history_created_at 
-                        ON calorie_history(created_at)
-                    ''')
-                    cursor.execute('''
-                        CREATE INDEX IF NOT EXISTS idx_calorie_history_user_date 
-                        ON calorie_history(user_id, DATE(created_at))
-                    ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_calorie_history_user_id 
+                    ON calorie_history(user_id)
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_calorie_history_created_at 
+                    ON calorie_history(created_at)
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_calorie_history_user_date 
+                    ON calorie_history(user_id, DATE(created_at))
+                ''')
                 
                 conn.commit()
-            
-            # Очищаем поврежденные данные
-            self.clean_corrupted_data()
-            logger.info("Database initialized successfully")
-            
+                
+                # Очищаем поврежденные данные
+                self.clean_corrupted_data()
+                logger.info("Database initialized successfully")
+                
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
     
@@ -212,7 +212,7 @@ class UserDatabase:
                         user_data.get('last_name'), user_data.get('name'), user_data.get('gender'),
                         user_data.get('age'), user_data.get('height'), user_data.get('weight'),
                         user_data.get('activity_level'), user_data.get('daily_calories')
-                    ))
+                ))
                 
                 conn.commit()
                 logger.info(f"User {user_data['user_id']} added/updated successfully")
@@ -239,7 +239,7 @@ class UserDatabase:
                         columns = [desc[0] for desc in cursor.description]
                         return dict(zip(columns, row))
                     else:
-                        return dict(row)
+                    return dict(row)
                 return None
                 
         except Exception as e:
@@ -299,12 +299,12 @@ class UserDatabase:
                         LIMIT %s
                     ''', (user_id, limit))
                 else:
-                    cursor.execute('''
-                        SELECT * FROM calorie_history 
-                        WHERE user_id = ?
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                    ''', (user_id, limit))
+                cursor.execute('''
+                    SELECT * FROM calorie_history 
+                    WHERE user_id = ? 
+                    ORDER BY created_at DESC 
+                    LIMIT ?
+                ''', (user_id, limit))
                 
                 records = cursor.fetchall()
                 
@@ -338,13 +338,13 @@ class UserDatabase:
                         ORDER BY created_at DESC
                     ''', (user_id, start_date, end_date))
                 else:
-                    cursor.execute('''
-                        SELECT * FROM calorie_history
-                        WHERE user_id = ?
-                        AND DATE(created_at) >= ? 
-                        AND DATE(created_at) <= ?
-                        ORDER BY created_at DESC
-                    ''', (user_id, start_date, end_date))
+                cursor.execute('''
+                    SELECT * FROM calorie_history 
+                    WHERE user_id = ? 
+                    AND DATE(created_at) >= ? 
+                    AND DATE(created_at) <= ?
+                    ORDER BY created_at DESC
+                ''', (user_id, start_date, end_date))
                 
                 records = cursor.fetchall()
                 
@@ -382,17 +382,17 @@ class UserDatabase:
                         ORDER BY date DESC
                     ''', (user_id,))
                 else:
-                    cursor.execute('''
-                        SELECT 
-                            DATE(created_at) as date,
-                            SUM(calories) as daily_total,
-                            COUNT(*) as meals_count
-                        FROM calorie_history 
-                        WHERE user_id = ? 
-                        AND created_at >= DATE('now', '-7 days')
-                        GROUP BY DATE(created_at)
-                        ORDER BY date DESC
-                    ''', (user_id,))
+                cursor.execute('''
+                    SELECT 
+                        DATE(created_at) as date,
+                        SUM(calories) as daily_total,
+                        COUNT(*) as meals_count
+                    FROM calorie_history 
+                    WHERE user_id = ? 
+                    AND created_at >= DATE('now', '-7 days')
+                    GROUP BY DATE(created_at)
+                    ORDER BY date DESC
+                ''', (user_id,))
                 
                 rows = cursor.fetchall()
                 
@@ -420,6 +420,32 @@ class UserDatabase:
         except Exception as e:
             logger.error(f"Error getting weekly calories summary: {e}")
             return {'daily_data': {}, 'total_weekly': 0, 'days_count': 0}
+    
+    def get_daily_calories_sum(self, user_id: int) -> int:
+        """Получение суммы калорий за сегодня"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                if self.use_postgres:
+                    cursor.execute('''
+                        SELECT COALESCE(SUM(calories), 0) FROM calorie_history 
+                        WHERE user_id = %s AND DATE(created_at) = CURRENT_DATE
+                    ''', (user_id,))
+                else:
+                    cursor.execute('''
+                        SELECT COALESCE(SUM(calories), 0) FROM calorie_history 
+                        WHERE user_id = ? AND DATE(created_at) = DATE('now')
+                    ''', (user_id,))
+                
+                result = cursor.fetchone()
+                daily_sum = result[0] if result else 0
+                logger.info(f"Daily calories sum for user {user_id}: {daily_sum}")
+                return daily_sum
+                
+        except Exception as e:
+            logger.error(f"Error getting daily calories sum: {e}")
+            return 0
     
     def reset_daily_calories(self, user_id: int) -> bool:
         """Сброс калорий за сегодняшний день"""
@@ -482,10 +508,10 @@ class UserDatabase:
                     ''')
                 else:
                     # Для SQLite используем GLOB
-                    cursor.execute('''
-                        DELETE FROM calorie_history 
+                cursor.execute('''
+                    DELETE FROM calorie_history 
                         WHERE calories NOT GLOB '[0-9]*' OR calories <= 0
-                    ''')
+                ''')
                 
                 deleted_count = cursor.rowcount
                 conn.commit()
