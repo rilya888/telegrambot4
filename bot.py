@@ -354,6 +354,7 @@ async def show_calorie_history(query, context, period="today"):
     
     # Получаем историю за период
     history = db.get_user_calorie_history_by_period(user_id, start_date, end_date)
+    logger.info(f"Retrieved {len(history)} records for user {user_id} from {start_date} to {end_date}")
     
     if history:
         total_calories = sum(record['calories'] for record in history)
@@ -496,6 +497,7 @@ def get_daily_calories_sum(user_id):
     
     today = date.today()
     history = db.get_user_calorie_history(user_id, limit=100)  # Получаем больше записей
+    logger.info(f"Retrieved {len(history)} total records for user {user_id}")
     
     daily_sum = 0
     for record in history:
@@ -515,9 +517,12 @@ def get_daily_calories_sum(user_id):
             
             if record_date == today:
                 daily_sum += record['calories']
+                logger.info(f"Added {record['calories']} calories from {record['food_name']} for today")
         except Exception as e:
             logger.warning(f"Error parsing date for record {record}: {e}")
             continue
+    
+    logger.info(f"Total daily calories for user {user_id}: {daily_sum}")
     
     return daily_sum
 

@@ -440,14 +440,16 @@ class UserDatabase:
                 cursor.execute('''
                     SELECT * FROM calorie_history
                     WHERE user_id = %s
-                    AND DATE(created_at) BETWEEN %s AND %s
+                    AND DATE(created_at) >= %s 
+                    AND DATE(created_at) <= %s
                     ORDER BY created_at DESC
                 ''', (user_id, start_date, end_date))
             else:
                 cursor.execute('''
                     SELECT * FROM calorie_history
                     WHERE user_id = ?
-                    AND DATE(created_at) BETWEEN ? AND ?
+                    AND DATE(created_at) >= ? 
+                    AND DATE(created_at) <= ?
                     ORDER BY created_at DESC
                 ''', (user_id, start_date, end_date))
 
