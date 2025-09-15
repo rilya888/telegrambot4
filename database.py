@@ -157,16 +157,16 @@ class UserDatabase:
             logger.error(f"Error updating user field: {e}")
             return False
     
-    def add_calorie_record(self, user_id: int, food_description: str, calories: int, analysis_type: str) -> bool:
+    def add_calorie_record(self, user_id: int, food_name: str, calories: int, source: str = "unknown") -> bool:
         """Добавление записи о калориях"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    INSERT INTO calorie_history (user_id, food_description, calories, analysis_type)
+                    INSERT INTO calorie_history (user_id, food_name, calories, source)
                     VALUES (?, ?, ?, ?)
-                ''', (user_id, food_description, calories, analysis_type))
+                ''', (user_id, food_name, calories, source))
                 
                 conn.commit()
                 return True
@@ -215,6 +215,55 @@ class UserDatabase:
         except Exception as e:
             logger.error(f"Error getting calorie history by period: {e}")
             return []
+    
+    def get_weekly_calories_summary(self, user_id: int) -> dict:
+        """Получение недельной сводки калорий по дням"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT 
+                        DATE(created_at) as date,
+                        SUM(calories) as daily_total,
+                        COUNT(*) as meals_count
+                    FROM calorie_history 
+                    WHERE user_id = ? 
+                    AND created_at >= DATE('now', '-7 days')
+                    GROUP BY DATE(created_at)
+                    ORDER BY date DESC
+                ''', (user_id,))
+                
+                rows = cursor.fetchall()
+                daily_data = {}
+                total_weekly = 0
+                
+                for row in rows:
+                    date_str = row['date']
+                    daily_total = row['daily_total'] or 0
+                    meals_count = row['meals_count']
+                    
+                    # Убеждаемся, что daily_total - это число
+                    if isinstance(daily_total, str):
+                        try:
+                            daily_total = int(daily_total)
+                        except ValueError:
+                            daily_total = 0
+                    
+                    daily_data[date_str] = {
+                        'calories': daily_total,
+                        'meals': meals_count
+                    }
+                    total_weekly += daily_total
+                
+                return {
+                    'daily_data': daily_data,
+                    'total_weekly': total_weekly
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting weekly calories summary: {e}")
+            return {'daily_data': {}, 'total_weekly': 0}
     
     def calculate_daily_calories(self, gender: str, age: int, height: float, weight: float, 
                                 activity_level: str) -> int:

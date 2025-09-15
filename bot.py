@@ -357,7 +357,16 @@ async def show_calorie_history(query, context, period="today"):
     logger.info(f"Retrieved {len(history)} records for user {user_id} from {start_date} to {end_date}")
     
     if history:
-        total_calories = sum(record['calories'] for record in history)
+        total_calories = 0
+        for record in history:
+            calories = record['calories']
+            if isinstance(calories, str):
+                try:
+                    calories = int(calories)
+                except ValueError:
+                    logger.warning(f"Invalid calories value: {calories}")
+                    continue
+            total_calories += calories
         history_text = f"📊 **История калорий за {period_name}**\n\n"
         history_text += f"**Общее количество калорий: {total_calories} ккал**\n\n"
         
@@ -516,8 +525,17 @@ def get_daily_calories_sum(user_id):
                 record_date = created_at.date()
             
             if record_date == today:
-                daily_sum += record['calories']
-                logger.info(f"Added {record['calories']} calories from {record['food_name']} for today")
+                # Убеждаемся, что calories - это число
+                calories = record['calories']
+                if isinstance(calories, str):
+                    try:
+                        calories = int(calories)
+                    except ValueError:
+                        logger.warning(f"Invalid calories value: {calories}")
+                        continue
+                
+                daily_sum += calories
+                logger.info(f"Added {calories} calories from {record['food_name']} for today")
         except Exception as e:
             logger.warning(f"Error parsing date for record {record}: {e}")
             continue
