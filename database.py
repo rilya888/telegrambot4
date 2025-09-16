@@ -84,7 +84,6 @@ class UserDatabase:
                             age INTEGER,
                             height REAL,
                             weight REAL,
-                            activity_level VARCHAR(50),
                             daily_calories INTEGER,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -127,7 +126,6 @@ class UserDatabase:
                         age INTEGER,
                         height REAL,
                         weight REAL,
-                        activity_level TEXT,
                         daily_calories INTEGER,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -178,8 +176,8 @@ class UserDatabase:
                 if self.use_postgres:
                     cursor.execute('''
                         INSERT INTO users (user_id, username, name, gender, 
-                                        age, height, weight, activity_level, daily_calories)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        age, height, weight, daily_calories)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (user_id) DO UPDATE SET
                             username = EXCLUDED.username,
                             name = EXCLUDED.name,
@@ -187,23 +185,22 @@ class UserDatabase:
                             age = EXCLUDED.age,
                             height = EXCLUDED.height,
                             weight = EXCLUDED.weight,
-                            activity_level = EXCLUDED.activity_level,
                             daily_calories = EXCLUDED.daily_calories,
                             updated_at = CURRENT_TIMESTAMP
                     ''', (
                         user_data['user_id'], user_data.get('username'), user_data.get('name'), 
                         user_data.get('gender'), user_data.get('age'), user_data.get('height'), 
-                        user_data.get('weight'), user_data.get('activity_level'), user_data.get('daily_calories')
+                        user_data.get('weight'), user_data.get('daily_calories')
                     ))
                 else:
                 cursor.execute('''
                         INSERT OR REPLACE INTO users (user_id, username, name, gender, 
-                                                    age, height, weight, activity_level, daily_calories)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                    age, height, weight, daily_calories)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                         user_data['user_id'], user_data.get('username'), user_data.get('name'), 
                         user_data.get('gender'), user_data.get('age'), user_data.get('height'), 
-                        user_data.get('weight'), user_data.get('activity_level'), user_data.get('daily_calories')
+                        user_data.get('weight'), user_data.get('daily_calories')
                 ))
                 
                 conn.commit()
@@ -517,9 +514,8 @@ class UserDatabase:
             logger.error(f"Error cleaning corrupted data: {e}")
             return False
     
-    def calculate_daily_calories(self, gender: str, age: int, height: float, weight: float, 
-                                activity_level: str) -> int:
-        """Расчет суточной нормы калорий по формуле Миффлина-Сан Жеора"""
+    def calculate_daily_calories(self, gender: str, age: int, height: float, weight: float) -> int:
+        """Расчет суточной нормы калорий по формуле Миффлина-Сан Жеора с фиксированным коэффициентом"""
         try:
             # Базовый метаболизм (BMR) по формуле Миффлина-Сан Жеора
             if gender.lower() == 'мужской':
@@ -527,27 +523,15 @@ class UserDatabase:
             else:  # женский
                 bmr = 10 * weight + 6.25 * height - 5 * age - 161
             
-            # Коэффициенты активности (обновленные значения)
-            activity_multipliers = {
-                'сидячая работа': 1.2,
-                'легкая активность': 1.375,
-                'умеренная активность': 1.55,
-                'высокая активность': 1.725,
-                'физическая работа': 1.9
-            }
+            # Используем фиксированный коэффициент для умеренной активности
+            multiplier = 1.55
             
-            logger.info(f"Calculate daily calories - activity_level: {repr(activity_level)}")
-            logger.info(f"Calculate daily calories - activity_level.lower(): {repr(activity_level.lower())}")
-            logger.info(f"Calculate daily calories - activity_multipliers: {activity_multipliers}")
-            
-            multiplier = activity_multipliers.get(activity_level.lower(), 1.2)
-            
-            logger.info(f"Calculate daily calories - selected multiplier: {multiplier}")
             logger.info(f"Calculate daily calories - BMR: {bmr:.2f}")
+            logger.info(f"Calculate daily calories - multiplier: {multiplier}")
             
             daily_calories = int(bmr * multiplier)
             
-            logger.info(f"Calculate daily calories - final result: {daily_calories} for {gender}, age {age}, height {height}, weight {weight}, activity {activity_level}")
+            logger.info(f"Calculate daily calories - final result: {daily_calories} for {gender}, age {age}, height {height}, weight {weight}")
             return daily_calories
             
         except Exception as e:

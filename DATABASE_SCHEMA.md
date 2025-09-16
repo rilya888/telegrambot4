@@ -14,7 +14,6 @@ CREATE TABLE users (
     age INTEGER,                          -- Возраст
     height REAL,                          -- Рост в см
     weight REAL,                          -- Вес в кг
-    activity_level VARCHAR(50),           -- Уровень активности
     daily_calories INTEGER,               -- Рассчитанная суточная норма калорий
     created_at TIMESTAMP,                 -- Дата создания записи
     updated_at TIMESTAMP                  -- Дата последнего обновления
@@ -56,20 +55,10 @@ CREATE TABLE users (
    user_data['weight'] = float(text)  # Пользователь вводит вес в кг
    ```
 
-7. **Шаг 6 - Активность**:
-   ```python
-   user_data['activity_level'] = activity_level  # Выбор из кнопок:
-   # "сидячая работа"
-   # "легкая активность" 
-   # "умеренная активность"
-   # "высокая активность"
-   # "физическая работа"
-   ```
-
-8. **Расчет калорий**:
+7. **Расчет калорий**:
    ```python
    user_data['daily_calories'] = db.calculate_daily_calories(
-       gender, age, height, weight, activity_level
+       gender, age, height, weight
    )
    ```
 
@@ -84,7 +73,6 @@ CREATE TABLE users (
     'age': 30,
     'height': 180.0,
     'weight': 75.0,
-    'activity_level': 'умеренная активность',
     'daily_calories': 2350
 }
 ```
