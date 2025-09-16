@@ -643,9 +643,20 @@ async def handle_activity_selection(query, context):
     
     activity_level = activity_map.get(query.data, "умеренная активность")
     
+    # Дополнительная проверка на случай ошибки
+    if activity_level is None:
+        activity_level = "умеренная активность"
+        logger.warning(f"Activity selection - activity_level is None, using default: {repr(activity_level)}")
+    
     logger.info(f"Activity selection - selected activity_level: {repr(activity_level)}")
     logger.info(f"Activity selection - activity_level type: {type(activity_level)}")
     logger.info(f"Activity selection - activity_level.lower(): {repr(activity_level.lower())}")
+    
+    # Проверяем, что activity_level не равен callback_data
+    if activity_level.startswith('activity_'):
+        logger.error(f"Activity selection - ERROR: activity_level is callback_data: {repr(activity_level)}")
+        activity_level = "умеренная активность"
+        logger.info(f"Activity selection - Fixed activity_level to: {repr(activity_level)}")
     
     context.user_data['registration_data']['activity_level'] = activity_level
     context.user_data['registration_step'] = 'complete'
@@ -931,6 +942,20 @@ async def complete_registration(update: Update, context: ContextTypes.DEFAULT_TY
         logger.info(f"Complete registration - weight: {repr(weight)}")
         logger.info(f"Complete registration - activity_level: {repr(activity_level)}")
         logger.info(f"Complete registration - activity_level type: {type(activity_level)}")
+        
+        # Проверяем, что activity_level не является callback_data
+        if activity_level and activity_level.startswith('activity_'):
+            logger.error(f"Complete registration - ERROR: activity_level is callback_data: {repr(activity_level)}")
+            # Исправляем на правильное значение
+            activity_map = {
+                "activity_sedentary": "сидячая работа",
+                "activity_light": "легкая активность", 
+                "activity_moderate": "умеренная активность",
+                "activity_high": "высокая активность",
+                "activity_very_high": "физическая работа"
+            }
+            activity_level = activity_map.get(activity_level, "умеренная активность")
+            logger.info(f"Complete registration - Fixed activity_level to: {repr(activity_level)}")
         
         # Рассчитываем суточные калории
         daily_calories = db.calculate_daily_calories(
