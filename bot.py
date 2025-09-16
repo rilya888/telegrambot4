@@ -265,6 +265,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await show_meal_type_menu(query, context)
     elif query.data.startswith("gender_"):
         await handle_gender_selection(query, context)
+    elif query.data.startswith("activity_"):
+        await handle_activity_selection(query, context)
     elif query.data == "edit_profile":
         await start_registration_flow(query, context)
     elif query.data == "confirm_reset":
@@ -303,12 +305,23 @@ async def show_profile(query, context):
         profile_text += f"Возраст: {user.get('age', 'Не указан')} лет\n"
         profile_text += f"Рост: {user.get('height', 'Не указан')} см\n"
         profile_text += f"Вес: {user.get('weight', 'Не указан')} кг\n"
+        # Форматируем уровень активности для лучшего отображения
+        activity_display = {
+            'сидячая работа': '🏢 Сидячая работа (офис, учеба)',
+            'легкая активность': '🚶 Легкая активность (прогулки, домашние дела)',
+            'умеренная активность': '🏃 Умеренная активность (спорт 3-5 раз/неделю)',
+            'высокая активность': '💪 Высокая активность (спорт 6-7 раз/неделю)',
+            'физическая работа': '🏗️ Физическая работа (строительство, грузчик)'
+        }
+        activity_level = user.get('activity_level', 'Не указан')
+        activity_text = activity_display.get(activity_level, activity_level)
+        profile_text += f"Уровень активности: {activity_text}\n"
         daily_calories = user.get('daily_calories', 'Не рассчитана')
         if daily_calories != 'Не рассчитана':
             profile_text += f"Суточная норма калорий: **{daily_calories} ккал**\n\n"
             profile_text += "📊 **Расчет основан на:**\n"
             profile_text += f"• Формула Миффлина-Сан Жеора\n"
-            profile_text += f"• Коэффициент активности: умеренная активность (1.55)\n"
+            profile_text += f"• Ваш уровень активности\n"
         else:
             profile_text += f"Суточная норма калорий: {daily_calories}"
         
@@ -614,6 +627,33 @@ async def handle_gender_selection(query, context):
     
     await query.edit_message_text("Введите ваш возраст:")
 
+async def handle_activity_selection(query, context):
+    """Обработка выбора уровня активности"""
+    activity_map = {
+        "activity_sedentary": "сидячая работа",
+        "activity_light": "легкая активность", 
+        "activity_moderate": "умеренная активность",
+        "activity_high": "высокая активность",
+        "activity_very_high": "физическая работа"
+    }
+    
+    # Добавляем детальное логирование для отладки
+    logger.info(f"Activity selection - query.data: {repr(query.data)}")
+    logger.info(f"Activity selection - activity_map: {activity_map}")
+    
+    activity_level = activity_map.get(query.data, "умеренная активность")
+    
+    logger.info(f"Activity selection - selected activity_level: {repr(activity_level)}")
+    logger.info(f"Activity selection - activity_level type: {type(activity_level)}")
+    logger.info(f"Activity selection - activity_level.lower(): {repr(activity_level.lower())}")
+    
+    context.user_data['registration_data']['activity_level'] = activity_level
+    context.user_data['registration_step'] = 'complete'
+    
+    # Завершаем регистрацию
+    user_data = context.user_data['registration_data']
+    logger.info(f"Activity selection - final user_data: {user_data}")
+    await complete_registration(query, context, user_data)
 
 async def handle_quick_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик фотографий для быстрого анализа (без сохранения в дневной расчет)"""
@@ -646,7 +686,7 @@ async def handle_quick_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await show_analysis_menu(update, context)
         
     except Exception as e:
-        logging.error(f"Error in quick photo analysis: {e}")
+        logger.error(f"Error in quick photo analysis: {e}")
         await update.message.reply_text("❌ Извините, не удалось проанализировать изображение. Попробуйте еще раз.")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -746,7 +786,7 @@ async def handle_quick_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await show_analysis_menu(update, context)
         
     except Exception as e:
-        logging.error(f"Error in quick text analysis: {e}")
+        logger.error(f"Error in quick text analysis: {e}")
         await update.message.reply_text("❌ Извините, не удалось проанализировать описание. Попробуйте еще раз.")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -846,19 +886,29 @@ async def handle_registration_text(update: Update, context: ContextTypes.DEFAULT
         else:
             await update.message.reply_text("Пожалуйста, введите корректный рост (100-250 см):")
     
-    
     elif step == 'weight':
-        try:
-            weight = float(text)
-            if 30 <= weight <= 300:
-                user_data['weight'] = weight
-                context.user_data['registration_step'] = 'complete'
-                
-                # Завершаем регистрацию
-                await complete_registration(update, context, user_data)
-            else:
-                await update.message.reply_text("Пожалуйста, введите корректный вес (30-300 кг):")
-        except ValueError:
+        weight = validate_user_input(text, "weight")
+        if weight is not None:
+            user_data['weight'] = weight
+            context.user_data['registration_step'] = 'activity'
+            
+            keyboard = [
+                [InlineKeyboardButton("🏢 Сидячая работа (офис, учеба)", callback_data="activity_sedentary")],
+                [InlineKeyboardButton("🚶 Легкая активность (прогулки, домашние дела)", callback_data="activity_light")],
+                [InlineKeyboardButton("🏃 Умеренная активность (спорт 3-5 раз/неделю)", callback_data="activity_moderate")],
+                [InlineKeyboardButton("💪 Высокая активность (спорт 6-7 раз/неделю)", callback_data="activity_high")],
+                [InlineKeyboardButton("🏗️ Физическая работа (строительство, грузчик)", callback_data="activity_very_high")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                "🏃‍♂️ **Выберите уровень вашей физической активности:**\n\n"
+                "Это поможет точно рассчитать вашу суточную норму калорий.\n"
+                "Выберите тот вариант, который лучше всего описывает ваш образ жизни:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
             await update.message.reply_text("Пожалуйста, введите корректный вес (30-300 кг):")
     
 
@@ -873,15 +923,18 @@ async def complete_registration(update: Update, context: ContextTypes.DEFAULT_TY
         age = user_data.get('age')
         height = user_data.get('height')
         weight = user_data.get('weight')
+        activity_level = user_data.get('activity_level')
         
         logger.info(f"Complete registration - gender: {repr(gender)}")
         logger.info(f"Complete registration - age: {repr(age)}")
         logger.info(f"Complete registration - height: {repr(height)}")
         logger.info(f"Complete registration - weight: {repr(weight)}")
+        logger.info(f"Complete registration - activity_level: {repr(activity_level)}")
+        logger.info(f"Complete registration - activity_level type: {type(activity_level)}")
         
-        # Рассчитываем суточные калории с фиксированным коэффициентом
+        # Рассчитываем суточные калории
         daily_calories = db.calculate_daily_calories(
-            gender, age, height, weight
+            gender, age, height, weight, activity_level
         )
         
         logger.info(f"Complete registration - calculated daily_calories: {daily_calories}")
@@ -1073,7 +1126,7 @@ async def handle_quick_voice(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text("❌ Не удалось распознать речь. Попробуйте еще раз.")
             
     except Exception as e:
-        logging.error(f"Error in quick voice analysis: {e}")
+        logger.error(f"Error in quick voice analysis: {e}")
         await update.message.reply_text("❌ Извините, не удалось обработать голосовое сообщение. Попробуйте еще раз.")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
