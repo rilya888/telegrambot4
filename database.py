@@ -79,8 +79,6 @@ class UserDatabase:
                         CREATE TABLE IF NOT EXISTS users (
                             user_id BIGINT PRIMARY KEY,
                             username VARCHAR(255),
-                            first_name VARCHAR(255),
-                            last_name VARCHAR(255),
                             name VARCHAR(255),
                             gender VARCHAR(10),
                             age INTEGER,
@@ -124,8 +122,6 @@ class UserDatabase:
                     CREATE TABLE IF NOT EXISTS users (
                         user_id INTEGER PRIMARY KEY,
                         username TEXT,
-                        first_name TEXT,
-                        last_name TEXT,
                         name TEXT,
                         gender TEXT,
                         age INTEGER,
@@ -133,8 +129,8 @@ class UserDatabase:
                         weight REAL,
                         activity_level TEXT,
                         daily_calories INTEGER,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
                 
@@ -181,13 +177,11 @@ class UserDatabase:
                 
                 if self.use_postgres:
                     cursor.execute('''
-                        INSERT INTO users (user_id, username, first_name, last_name, name, gender, 
+                        INSERT INTO users (user_id, username, name, gender, 
                                         age, height, weight, activity_level, daily_calories)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (user_id) DO UPDATE SET
                             username = EXCLUDED.username,
-                            first_name = EXCLUDED.first_name,
-                            last_name = EXCLUDED.last_name,
                             name = EXCLUDED.name,
                             gender = EXCLUDED.gender,
                             age = EXCLUDED.age,
@@ -197,21 +191,19 @@ class UserDatabase:
                             daily_calories = EXCLUDED.daily_calories,
                             updated_at = CURRENT_TIMESTAMP
                     ''', (
-                        user_data['user_id'], user_data.get('username'), user_data.get('first_name'),
-                        user_data.get('last_name'), user_data.get('name'), user_data.get('gender'),
-                        user_data.get('age'), user_data.get('height'), user_data.get('weight'),
-                        user_data.get('activity_level'), user_data.get('daily_calories')
+                        user_data['user_id'], user_data.get('username'), user_data.get('name'), 
+                        user_data.get('gender'), user_data.get('age'), user_data.get('height'), 
+                        user_data.get('weight'), user_data.get('activity_level'), user_data.get('daily_calories')
                     ))
                 else:
                 cursor.execute('''
-                        INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, name, gender, 
+                        INSERT OR REPLACE INTO users (user_id, username, name, gender, 
                                                     age, height, weight, activity_level, daily_calories)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                        user_data['user_id'], user_data.get('username'), user_data.get('first_name'),
-                        user_data.get('last_name'), user_data.get('name'), user_data.get('gender'),
-                        user_data.get('age'), user_data.get('height'), user_data.get('weight'),
-                        user_data.get('activity_level'), user_data.get('daily_calories')
+                        user_data['user_id'], user_data.get('username'), user_data.get('name'), 
+                        user_data.get('gender'), user_data.get('age'), user_data.get('height'), 
+                        user_data.get('weight'), user_data.get('activity_level'), user_data.get('daily_calories')
                 ))
                 
                 conn.commit()

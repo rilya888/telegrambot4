@@ -281,9 +281,7 @@ async def start_registration_flow(query, context):
     # Сохраняем начальные данные пользователя
     user_data = {
         'user_id': user_id,
-        'username': query.from_user.username,
-        'first_name': query.from_user.first_name,
-        'last_name': query.from_user.last_name
+        'username': query.from_user.username
     }
     
     # Сохраняем в контексте для дальнейшего использования
@@ -1167,7 +1165,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 db.add_calorie_record(user_id, meal_type, calories, "voice")
                 
                 # Получаем общую сумму калорий за сегодня
-                daily_sum = get_daily_calories_sum(user_id)
+                daily_sum = db.get_daily_calories_sum(user_id)
                 daily_calories = user.get('daily_calories', 0)
                 
                 # Формируем ответ
