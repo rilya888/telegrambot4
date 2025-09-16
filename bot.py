@@ -637,13 +637,15 @@ async def handle_activity_selection(query, context):
         "activity_very_high": "физическая работа"
     }
     
-    # Добавляем логирование для отладки
+    # Добавляем детальное логирование для отладки
     logger.info(f"Activity selection - query.data: {repr(query.data)}")
     logger.info(f"Activity selection - activity_map: {activity_map}")
     
     activity_level = activity_map.get(query.data, "умеренная активность")
     
     logger.info(f"Activity selection - selected activity_level: {repr(activity_level)}")
+    logger.info(f"Activity selection - activity_level type: {type(activity_level)}")
+    logger.info(f"Activity selection - activity_level.lower(): {repr(activity_level.lower())}")
     
     context.user_data['registration_data']['activity_level'] = activity_level
     context.user_data['registration_step'] = 'complete'
@@ -913,16 +915,26 @@ async def handle_registration_text(update: Update, context: ContextTypes.DEFAULT
 async def complete_registration(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data: dict):
     """Завершение регистрации"""
     try:
-        # Добавляем логирование для отладки
+        # Добавляем детальное логирование для отладки
         logger.info(f"Complete registration - user_data: {user_data}")
+        
+        # Логируем параметры для расчета калорий
+        gender = user_data.get('gender')
+        age = user_data.get('age')
+        height = user_data.get('height')
+        weight = user_data.get('weight')
+        activity_level = user_data.get('activity_level')
+        
+        logger.info(f"Complete registration - gender: {repr(gender)}")
+        logger.info(f"Complete registration - age: {repr(age)}")
+        logger.info(f"Complete registration - height: {repr(height)}")
+        logger.info(f"Complete registration - weight: {repr(weight)}")
+        logger.info(f"Complete registration - activity_level: {repr(activity_level)}")
+        logger.info(f"Complete registration - activity_level type: {type(activity_level)}")
         
         # Рассчитываем суточные калории
         daily_calories = db.calculate_daily_calories(
-            user_data.get('gender'),
-            user_data.get('age'),
-            user_data.get('height'),
-            user_data.get('weight'),
-            user_data.get('activity_level')
+            gender, age, height, weight, activity_level
         )
         
         logger.info(f"Complete registration - calculated daily_calories: {daily_calories}")
