@@ -57,15 +57,15 @@ class UserDatabase:
                     finally:
                         conn.close()
             else:
-                conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
                 conn.row_factory = sqlite3.Row
-                try:
-                    yield conn
-                except Exception as e:
-                    conn.rollback()
-                    raise e
-                finally:
-                    conn.close()
+            try:
+                yield conn
+            except Exception as e:
+                conn.rollback()
+                raise e
+            finally:
+                conn.close()
     
     def init_database(self):
         """Инициализация базы данных с оптимизированной структурой"""
@@ -120,7 +120,7 @@ class UserDatabase:
                     ''')
                 else:
                     # SQLite таблицы
-                    cursor.execute('''
+                cursor.execute('''
                     CREATE TABLE IF NOT EXISTS users (
                         user_id INTEGER PRIMARY KEY,
                         username TEXT,
@@ -203,11 +203,11 @@ class UserDatabase:
                         user_data.get('activity_level'), user_data.get('daily_calories')
                     ))
                 else:
-                    cursor.execute('''
+                cursor.execute('''
                         INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, name, gender, 
                                                     age, height, weight, activity_level, daily_calories)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
+                ''', (
                         user_data['user_id'], user_data.get('username'), user_data.get('first_name'),
                         user_data.get('last_name'), user_data.get('name'), user_data.get('gender'),
                         user_data.get('age'), user_data.get('height'), user_data.get('weight'),
@@ -239,7 +239,7 @@ class UserDatabase:
                         columns = [desc[0] for desc in cursor.description]
                         return dict(zip(columns, row))
                     else:
-                        return dict(row)
+                    return dict(row)
                 return None
                 
         except Exception as e:
@@ -272,10 +272,10 @@ class UserDatabase:
                         VALUES (%s, %s, %s, %s)
                     ''', (user_id, food_name, calories, source))
                 else:
-                    cursor.execute('''
-                        INSERT INTO calorie_history (user_id, food_name, calories, source)
-                        VALUES (?, ?, ?, ?)
-                    ''', (user_id, food_name, calories, source))
+                cursor.execute('''
+                    INSERT INTO calorie_history (user_id, food_name, calories, source)
+                    VALUES (?, ?, ?, ?)
+                ''', (user_id, food_name, calories, source))
                 
                 conn.commit()
                 logger.info(f"Successfully added calorie record for user {user_id}")
@@ -299,12 +299,12 @@ class UserDatabase:
                         LIMIT %s
                     ''', (user_id, limit))
                 else:
-                    cursor.execute('''
-                        SELECT * FROM calorie_history 
-                        WHERE user_id = ?
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                    ''', (user_id, limit))
+                cursor.execute('''
+                    SELECT * FROM calorie_history 
+                    WHERE user_id = ? 
+                    ORDER BY created_at DESC 
+                    LIMIT ?
+                ''', (user_id, limit))
                 
                 records = cursor.fetchall()
                 
@@ -338,13 +338,13 @@ class UserDatabase:
                         ORDER BY created_at DESC
                     ''', (user_id, start_date, end_date))
                 else:
-                    cursor.execute('''
-                        SELECT * FROM calorie_history
-                        WHERE user_id = ?
-                        AND DATE(created_at) >= ? 
-                        AND DATE(created_at) <= ?
-                        ORDER BY created_at DESC
-                    ''', (user_id, start_date, end_date))
+                cursor.execute('''
+                    SELECT * FROM calorie_history 
+                    WHERE user_id = ? 
+                    AND DATE(created_at) >= ? 
+                    AND DATE(created_at) <= ?
+                    ORDER BY created_at DESC
+                ''', (user_id, start_date, end_date))
                 
                 records = cursor.fetchall()
                 
@@ -382,17 +382,17 @@ class UserDatabase:
                         ORDER BY date DESC
                     ''', (user_id,))
                 else:
-                    cursor.execute('''
-                        SELECT 
-                            DATE(created_at) as date,
-                            SUM(calories) as daily_total,
-                            COUNT(*) as meals_count
-                        FROM calorie_history 
-                        WHERE user_id = ? 
-                        AND created_at >= DATE('now', '-7 days')
-                        GROUP BY DATE(created_at)
-                        ORDER BY date DESC
-                    ''', (user_id,))
+                cursor.execute('''
+                    SELECT 
+                        DATE(created_at) as date,
+                        SUM(calories) as daily_total,
+                        COUNT(*) as meals_count
+                    FROM calorie_history 
+                    WHERE user_id = ? 
+                    AND created_at >= DATE('now', '-7 days')
+                    GROUP BY DATE(created_at)
+                    ORDER BY date DESC
+                ''', (user_id,))
                 
                 rows = cursor.fetchall()
                 
@@ -508,10 +508,10 @@ class UserDatabase:
                     ''')
                 else:
                     # Для SQLite используем GLOB
-                    cursor.execute('''
-                        DELETE FROM calorie_history 
+                cursor.execute('''
+                    DELETE FROM calorie_history 
                         WHERE calories NOT GLOB '[0-9]*' OR calories <= 0
-                    ''')
+                ''')
                 
                 deleted_count = cursor.rowcount
                 conn.commit()
@@ -544,10 +544,18 @@ class UserDatabase:
                 'физическая работа': 1.9
             }
             
+            logger.info(f"Calculate daily calories - activity_level: {repr(activity_level)}")
+            logger.info(f"Calculate daily calories - activity_level.lower(): {repr(activity_level.lower())}")
+            logger.info(f"Calculate daily calories - activity_multipliers: {activity_multipliers}")
+            
             multiplier = activity_multipliers.get(activity_level.lower(), 1.2)
+            
+            logger.info(f"Calculate daily calories - selected multiplier: {multiplier}")
+            logger.info(f"Calculate daily calories - BMR: {bmr:.2f}")
+            
             daily_calories = int(bmr * multiplier)
             
-            logger.info(f"Calculated daily calories: {daily_calories} for {gender}, age {age}, height {height}, weight {weight}, activity {activity_level}")
+            logger.info(f"Calculate daily calories - final result: {daily_calories} for {gender}, age {age}, height {height}, weight {weight}, activity {activity_level}")
             return daily_calories
             
         except Exception as e:

@@ -639,12 +639,20 @@ async def handle_activity_selection(query, context):
         "activity_very_high": "физическая работа"
     }
     
+    # Добавляем логирование для отладки
+    logger.info(f"Activity selection - query.data: {repr(query.data)}")
+    logger.info(f"Activity selection - activity_map: {activity_map}")
+    
     activity_level = activity_map.get(query.data, "умеренная активность")
+    
+    logger.info(f"Activity selection - selected activity_level: {repr(activity_level)}")
+    
     context.user_data['registration_data']['activity_level'] = activity_level
     context.user_data['registration_step'] = 'complete'
     
     # Завершаем регистрацию
     user_data = context.user_data['registration_data']
+    logger.info(f"Activity selection - final user_data: {user_data}")
     await complete_registration(query, context, user_data)
 
 async def handle_quick_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -907,6 +915,9 @@ async def handle_registration_text(update: Update, context: ContextTypes.DEFAULT
 async def complete_registration(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data: dict):
     """Завершение регистрации"""
     try:
+        # Добавляем логирование для отладки
+        logger.info(f"Complete registration - user_data: {user_data}")
+        
         # Рассчитываем суточные калории
         daily_calories = db.calculate_daily_calories(
             user_data.get('gender'),
@@ -915,6 +926,9 @@ async def complete_registration(update: Update, context: ContextTypes.DEFAULT_TY
             user_data.get('weight'),
             user_data.get('activity_level')
         )
+        
+        logger.info(f"Complete registration - calculated daily_calories: {daily_calories}")
+        
         user_data['daily_calories'] = daily_calories
         
         # Сохраняем пользователя в базу данных
